@@ -1,0 +1,922 @@
+
+===== PAGE 1 =====
+
+HyperBones: Realtime Bone-driven Neural Garment Simulation with
+Hypernetwork Conditioning
+ASTITVA SRIVASTAVA,IIIT Hyderabad, India
+HSIAO-YU CHEN,Meta Reality Labs, USA
+RYAN GOLDADE,Meta Reality Labs, USA
+PHILIPP HERHOLZ,Meta Reality Labs, USA
+ZHONGSHI JIANG,Meta Reality Labs, USA
+GENE WEI-CHIN LIN,Meta Reality Labs, USA
+LINGCHEN YANG,Meta Reality Labs, USA
+NIKOLAOS SARAFIANOS,Meta Reality Labs, USA
+TUUR STUYCK,Meta Reality Labs, USA
+DOUG ROBLE,Meta Reality Labs, USA
+AVINASH SHARMA,IIIT Hyderabad and IIT Jodhpur, India
+EGOR LARIONOV,Meta Reality Labs, USA
+Fig. 1. We propose an efficient neural garment simulation method, which handles garments across a range of motions and body shapes for a fixed set of
+garments. We demonstrate25×performance improvement over state-of-the-art methods with comparable visual quality.
+Recent advances in garment simulation have brought high-quality results
+closer to real-time performance. Physics-based simulators can produce ac-
+curate motion, but remain too computationally expensive for interactive
+applications. In contrast, linear blend skinning is efficient, but cannot capture
+the complex dynamics of loose-fitting garments, often leading to unrealistic
+motion and visual artifacts. Neural methods offer a promising alternative,
+yet they still struggle to animate loose clothing plausibly under strict run-
+time constraints. We present a fast and physically plausible approach for
+dynamic garment simulation. Our method trains a reduced-space neural
+dynamics simulator composed of independent coarse- and fine-level com-
+ponents. At the coarse level, the garment is driven by a set of virtual bones
+integrated with a lightweight neural network. Fine-scale wrinkle details
+are then recovered using a trained convolutional neural map. By decou-
+pling identity-specific computation from real-time neural integration, our
+architecture maintains high performance while supporting diverse body
+shapes and motions. We further introduce an effective physics-supervision
+scheme that enables accurate results without relying on an external sim-
+ulator. Experiments show that our method produces physically plausible
+garment dynamics, generalizes across a range of motions and body shapes,
+and supports a fixed set of garments. Our simulator runs at 300+ FPS on a
+commodity GPU, making it suitable for real-time applications.
+1 Introduction
+Character animation has been a central challenge in graphics and vi-
+sion research, driving innovation across industries from video games
+and visual effects to emerging virtual and mixed reality experiences
+[WSS+25]. Despite significant progress, achieving high-quality ani-
+mation, especially for clothing, remains difficult. This is largely due
+to the limited compute budgets available on most devices.
+Traditional physics-based simulation methods, such as finite el-
+ement and position-based techniques, are capable of producing
+realistic cloth motion. However, they suffer from critical drawbacks:
+high computational cost, lack of robustness, and the need for expert-
+driven parameter tuning. These factors make real-time performance
+at scale unattainable on anything but high-end hardware, and full
+automation for data generation impractical.
+Recent learning-based approaches have sought to bridge the gap
+between realism and efficiency, but they often require substantial
+compute and memory resources [GBH23], or struggle to generalize
+across diverse body shapes, poses, and garment types [SOC22]. Fast
+skinning methods such as linear blend skinning (LBS) offer real-
+time performance at the expense of physical plausibility, frequently
+introducing artifacts that break visual immersion.
+arXiv:2605.20460v3  [cs.GR]  28 May 2026
+===== PAGE 2 =====
+
+2•Astitva Srivastava, Hsiao-yu Chen, Ryan Goldade, Philipp Herholz, Zhongshi Jiang, Gene Wei-Chin Lin, Lingchen Yang, Nikolaos Sarafianos, Tuur Stuyck, Doug Roble,
+Avinash Sharma, and Egor Larionov
+We address this limited expressiveness by introducing a set of
+virtual bones[ PMJ+22] placed on the garment surface, which act as
+an intermediate, coarse level control structure between the articu-
+lated skeleton and the garment vertices. To learn physically accurate
+transformations of these virtual bones, we propose a self-supervised
+framework that does not depend on precomputed simulation data
+and demonstrates robust generalization across diverse body mo-
+tion sequences. Our approach is motivated by the insight that worn
+garments exhibit different modes of deformation when observed
+from afar and up-close. From a distance, garment (especially loose
+garment) motion can be modeled by coarse level affine transforms
+defining its position and orientation in space. Wrinkle-level detail,
+on the other hand, stays close to the surface of the garment, and so
+is best modeled in UV space. This observation allows us to substan-
+tially reduce the runtime computational cost by decoupling coarse-
+and fine-level deformation into two stages.
+In the first stage, the pose-dependent network takes as input a
+short history of virtual bone positions and velocities over consecu-
+tive frames and predicts corrected virtual bone transforms, which
+are applied via LBS to produce a coarse, globally coherent garment
+mesh. In the second stage, a convolutional network operating in UV
+space predicts per-vertex residual displacements to recover high-
+frequency surface detail such as wrinkles and contact folds that
+sparse bone control struggles to represent. Both stages are condi-
+tioned on a precomputed global body-garment encoding: a shape
+code produced by a canonical graph encoder modulates the pose-
+dependent network via FiLM [PSDV+18], while a separate decoder
+predicts per-vertex features from the same encoding. These features
+are computed once and projected onto the UV atlas, providing the
+UV-space network with static garment-specific priors (seam loca-
+tions, panel layout and per-region stiffness) that persist across all
+frames. The global encoding is defined in a canonical space, disen-
+tangled from pose-dependent information, and computed once per
+identity.
+While bone position history provides a useful temporal signal,
+it is insufficient as standalone training supervision because it pro-
+duces degenerate velocity estimates whenever the body is station-
+ary. This makes physics losses such as inertia uninformative. We
+therefore jointly train a per-vertex neural simulator based on Mesh-
+GraphNet [PFSGB21]. Specifically, we use Hood [GBH23], which
+maintains explicit integration state across frames and provides phys-
+ically grounded position targets via a cross-branch consistency loss.
+This temporal integration branch also propagates physics gradients
+through a shared encoder into the precomputed canonical represen-
+tation, so that the cached body-garment features reflect dynamic
+cloth behavior rather than geometry alone. The temporal integration
+branch is discarded at inference; per-frame cost reduces to evalu-
+ating the compact skeleton-driven network conditioned on cached
+identity-specific quantities. The proposed framework achieves up to
+significant speedup over state-of-the-art methods while maintaining
+comparable reconstruction quality.
+In summary, our contributions are:
+• A lightweight framework that decomposes computationally
+expensive mesh-based integration into a compact set of bone-
+driven transforms, followed by an efficient convolutional
+map. This design enables real-time cloth simulation on the
+GPU while achieving simulation quality comparable to state-
+of-the-art methods.
+• A modulation-based global conditioning approach that de-
+couples pose-dependent computation from the body-garment
+encoding thereby substantially reducing run-time cost.
+• A self-supervision strategy in which a lightweight integrator
+model is jointly trained with a computationally intensive
+neural simulator. This approach enables physics-aware learn-
+ing and improves the fidelity and stability of the lightweight
+model.
+2 Related Works
+Generating realistic garment deformation under tight compute con-
+straints remains a significant challenge. While physics-based simu-
+lation offers high accuracy, its computational cost and manual setup
+limit scalability. Current research focuses on developing efficient,
+generalizable models, yet achieving a balance between performance
+and versatility remains an open problem.
+2.1 Physics-based Simulation
+Physics-based methods to simulate highly-detailed clothing is still
+an active research topic decades after the foundational works [BW98,
+Stu22]. While physics-based methods yield realistic results, their
+high computational cost often prohibits real-time use. Recent re-
+search addresses this by employing massively parallel algorithms
+to leverage GPU acceleration for interactive applications [MMC16,
+CLYY24]. Alternatively, simulation has been accelerated by mod-
+eling a subspace from which to solve the equations of motion
+[HTC+14, DASTH10, MSP+24, FMD+19, CCW+23] or predicting
+latent-space solutions with a neural simulator [LLL+25].
+2.2 Skinning-based Garment Deformation
+Alternative to expensive simulation methods, skinning-based gar-
+ment deformation methods are a common feature in compute-limited
+environments like video games [JDKL14]. However, standard linear
+blend skinning (LBS) can create unappealing garment deformations,
+as the garment geometry may not map well to the underlying body
+structure, a problem particularly pronounced with loose-fitting gar-
+ments. To improve deformation quality over traditional skinning
+weight methods, one can optimize skinning weights with geometric
+or physics-based losses and collision penalties over the skinning-
+based clothing [JBPS11, LSC+26, CCP24].
+To further address improved deformations, skinning decompo-
+sition [LD12] extracts the linear blend skinning from a set of ex-
+amples, effectively modeling the deformation by a low number of
+rigid bones. Alternatively, learning based methods employ bone-
+based representation to predict the deformation of loose-fitting
+garment meshes at interactive rates [ PMJ+22, HSX+22, LTY+24].
+More broadly, the concept of virtual bones has been widely adopted
+to parameterize motion across both graphics and vision. Early defor-
+mation and rigging methods [SZGP07, JBPS11, BP07] demonstrated
+that sparse local nodes effectively capture non-rigid deformations.
+This principle was later extended to real-time surface tracking in
+===== PAGE 3 =====
+
+HyperBones: Realtime Bone-driven Neural Garment Simulation with Hypernetwork Conditioning•3
+DynamicFusion [NFS15] and LiveCap [HXZ+19]. Recent Gaussian-
+based representations, including Dynamic 3D Gaussians [LYL+23],
+RigGS [LCG+24], and Dual Gaussian [JSH+24], further parameterize
+complex motions through spatially distributed virtual bones. At the
+generative level, DiMO [MLW+25] distills node-based motion from
+diffusion models. Collectively, these works demonstrate that virtual
+bones form a powerful abstraction for parameterizing motion in a
+variety of representations, including garment deformation.
+2.3 Neural Garment Simulation
+In recent years, two primary approaches have emerged for learning
+garment simulation: supervised models relying directly on data, and
+self-supervised models relying on physics-based losses instead of
+data. Supervised methods like [HDDN19] combine subspace simula-
+tion techniques with machine learning to enable efficient subspace-
+only physics simulation. TailorNet [ PLPM20] predicts deforma-
+tions in frequency space and models clothing dynamics conditioned
+on pose, shape, and style. Others [ LWK+24] leverage a manifold-
+aware transformer framework to predict deformations. However,
+these methods require simulation data that is often difficult and
+expensive to obtain. In contrast, self-supervised approaches have
+shown effectiveness in modeling physical systems without the need
+for precomputed training data [SOC22, BME22, SLL+25, LLC+26].
+SNUG [SOC22] introduced a self-supervised training method for
+modeling dynamic clothing deformations in a data-free approach.
+NCS [BME22] extended this work by devising an architecture able
+to automatically disentangle static and dynamic cloth subspaces,
+improving quality of the results. DrapeNet [DLLG+23] presented
+a strategy enabling it to generalize across garments for modeling
+quasi-static deformations. HOOD [GBH23] presented a graph neural
+network approach to model cloth dynamics that generalizes across
+body and garment shapes for varying poses. Follow-up work im-
+proved performance [LSL+24]. Graph neural network have also been
+successfully employed to enable cloth upsampling [HLB+23, ZL24].
+3 Methodology
+One key observation is that garment deformation decomposes nat-
+urally by spatial frequency: global motion is well-approximated
+by sparse affine transforms, while surface detail such as wrinkles
+remains local. We exploit this through a coarse-to-fine architec-
+ture in which virtual bones capture low-frequency pose-driven
+motion and a UV-space network recovers high-frequency residuals.
+Furthermore, at runtime the mesh topology and body–garment re-
+lationship are fixed, only skeleton joint angles change per frame.
+We leverage this by separating identity-specific quantities, precom-
+puted once, from pose-dependent quantities evaluated per frame
+by a lightweight network. To train this efficient pipeline without
+simulation data, we jointly optimize it alongside a per-vertex Mesh-
+GraphNet [PFSGB21] that integrates cloth dynamics over time un-
+der self-supervised physics losses. This temporal branch acts as a
+teacher, supervising the fast runtime module via a cross-branch
+consistency loss. Crucially, the graph encoder weights are shared
+between the two branches, so that physics gradients propagate into
+the precomputed identity representation, encoding not just canoni-
+cal geometry but also the dynamic behavior it implies. The temporal
+integration branch is discarded after training; at inference, only the
+bone-driven network runs, conditioned on cached identity-specific
+quantities.
+The proposed framework has three modules (Figure 2):[A]Pose-
+Conditioned Deformation, the per-frame runtime branch;[B]Body
+and Garment Encoding, which computes identity-specific quanti-
+ties at canonical-encoding; and[C]Temporal Integration, a mesh-
+based dynamics branch used only during training. Module [C] is
+discarded after training. Module [B] runs once peridentity(body
+shape/garment). Only Module [A] is evaluated at run time.
+3.1 Problem Setup and Virtual Bone Representation
+A clothed character at time𝑡 consists of a body mesh with vertices
+V𝑏, a skeleton of𝐾 joints with transformations{T𝑡
+𝑘}𝐾
+𝑘=1⊂SE( 3),
+and a garment mesh with verticesV𝑐 and fixed topologyE𝑐. The
+garment topology and UV atlas are identity properties; only skeleton
+joint angles,𝜽 𝑡 , change per frame.
+Driving garment vertices directly from skeleton joints is overly
+restrictive since body joints encode rigid segment motion and are
+shared across garments, producing deformations that do not re-
+spect garment-specific behavior such as hem lag or panel-boundary
+compliance. Following Pan et al. [PMJ+22], we introduce𝐵 virtual
+bones as an intermediate layer: skeleton joints drive virtual bones,
+and virtual bones drive garment vertices. This separation allows
+the virtual bone layer to capture garment-local deformation modes
+independently of body-segment boundaries.
+Virtual bone positions{p𝑐
+𝑏}𝐵
+𝑏=1 are obtained by running Farthest
+Point Sampling (FPS) [ELPZ97] on the vertices of the canonically
+draped garment mesh. Sampling on the garment rather than the
+body ensures the control points are distributed according to garment
+surface area, not body topology, and respect panel boundaries and
+drape contours of the specific garment.
+Skeleton→ Bones.Following HOOD [ GBH23], we assign each
+virtual bone𝑏 the SMPL skinning weights [LMR+15] of its nearest
+point on the body surface, giving per-bone weightsw SMPL
+𝑏 ∈R 𝐾 .
+The virtual bone position in homogeneous coordinates at time𝑡 is:
+˜p𝑡
+𝑏 =
+𝐾∑︁
+𝑘=1
+𝑤 SMPL
+𝑏𝑘 T𝑡
+𝑘 p𝑐
+𝑏.(1)
+Bones→ Garment.Garment vertex blend weightsW(0)∈R|V𝑐|×𝐵
+are initialized on the draped garment mesh:
+𝑤(0)
+𝑣𝑏 = exp(−𝑑𝑣𝑏/𝜎)˝
+𝑏′ exp(−𝑑𝑣𝑏′/𝜎),(2)
+where𝑑𝑣𝑏 is the geodesic distance from garment vertex 𝑣 to vir-
+tual bone𝑏 along the garment surface. Geodesic distances on the
+garment surface are used rather than Euclidean distances to avoid
+coupling vertices across opposite sides of a thin garment panel
+through the body volume [JDKL14]. These weights encode garment-
+surface proximity but not garment mechanics; Module [B] predicts
+corrections Δw𝑣 to account for garment structure and body-shape-
+dependent fit.
+===== PAGE 4 =====
+
+4•Astitva Srivastava, Hsiao-yu Chen, Ryan Goldade, Philipp Herholz, Zhongshi Jiang, Gene Wei-Chin Lin, Lingchen Yang, Nikolaos Sarafianos, Tuur Stuyck, Doug Roble,
+Avinash Sharma, and Egor Larionov
+Shape 
+Modulator
+Bone-Net
+t-2 t-1
+t
+t-2
+t-1 t
+Conv-MLP
+Lphys
+L3D
+[B] Body/Garment Encoding
+[C] Temporal Integration
+Pose
+Body-Garment-Bones 
+Canonical Graph
+MeshGraphNet
+[A] Pose-Conditioned Deformation
+(Previous Predictions)
+(Bones → Garment)
+Body-Garment 
+Dynamic Graph
+Auto-regressive
+Inference
+t
+LBS
+Features + Δskinwts
+Shared Encoder Weights
+Vertex
+Bone Mask
+Features
+(Project to UV)
+Fig. 2.Method overview.[A] Pose-Conditioned Deformation: given a pose sequence, virtual bones are first transformed via LBS (Skeleton → Bones)
+using SMPL skinning weights, then corrected by Bone-Net conditioned on the shape codezvia the Shape Modulator. The corrected bones drive garment
+vertices via LBS (Bones→ Garment) with learned skin weight corrections Δw. The resulting posed position map is concatenated with a static feature map
+and processed by a Conv-MLP to predict per-vertex residuals𝛿p𝑣.[B] Body/Garment Encoding: a canonical Body-Garment-Bones Graph is processed
+once per identity through a graph encoder (weights shared with [C]) to producez, Δw, and UV-projected featuresF UV.[C] Temporal Integration: a
+MeshGraphNet trained on body-garment dynamic graph sequences via a self-supervised physics lossLphys; its output positions supervise Module [A] through
+the cross-branch consistency lossL 3D. Module [C] is discarded at inference; Module [B] runs once per identity; only Module [A] runs per frame.
+3.2 Module A: Pose-Conditioned Deformation
+Module [A] operates at inference time and maps skeleton pose to
+garment vertex positions in two sequential stages, following the
+coarse-to-fine structure of Pan et al. [ PMJ+22]: a global virtual-
+bone stage handles low-frequency pose-driven deformation, and
+a UV-space stage handles high-frequency surface detail. The pose
+sequence 𝚯={𝜽 𝑡−2,𝜽𝑡−1,𝜽𝑡} enters the pipeline via LBS (Skeleton
+→ Bones); Bone-Net then operates on the resulting bone positions
+and velocities rather than on raw joint angles. Figure 3 shows the
+output of each stage in Module [A].
+===== PAGE 5 =====
+
+HyperBones: Realtime Bone-driven Neural Garment Simulation with Hypernetwork Conditioning•5
+3.2.1 Stage 1: Virtual-Bone Deformation.SMPL-initialized virtual
+bone transforms follow body joints rigidly and carry no model
+of cloth dynamics. We learn per-frame corrections {ΔT𝑡
+𝑏}𝐵
+𝑏=1 via
+Bone-Net, a temporal MLP whose input at each frame is the con-
+catenation of virtual bone positions { ˜p𝐹
+𝑏}𝐵
+𝑏=1 and bone velocities
+{ ˜p𝐹
+𝑏− ˜p𝐹−1
+𝑏 }𝐵
+𝑏=1 over the window 𝐹∈{𝑡− 2,𝑡− 1,𝑡} , following the
+node feature convention of HOOD [ GBH23]. Bone positions and
+their finite differences provide velocity signals directly in the gar-
+ment’s reference frame, which is a stronger conditioning signal than
+raw joint-angle differences in local rotation space. The three-frame
+window provides first- and second-order temporal information suf-
+ficient to model lagged garment effects without explicit integra-
+tion [SOC22, PMJ+22].
+A single Bone-Net is shared across body shapes and garment
+types. Identity-specific behavior is introduced via FiLM condition-
+ing [PSDV+18]: a Shape Modulator MLP maps the precomputed
+shape codez ∈R 𝑑𝑧 (Section 3.3) to per-layer scale and shift param-
+eters(𝜸 ℓ,𝜷 ℓ)applied to each hidden layerh ℓ of Bone-Net:
+hℓ←𝜸 ℓ(z)⊙h ℓ+𝜷 ℓ(z).(3)
+Sincezis precomputed at canonical-encoding, this adds no per-
+frame cost. FiLM conditioning is used here rather than concatenation
+or hypernetwork variants because it modulates all layers of Bone-
+Net from a single compact code, which has been shown to be more
+parameter-efficient for geometry-conditioned networks.
+Module [B] predicts per-vertex corrections Δw𝑣 ∈R 𝐵 to the
+initialized weights of Equation 2. The corrected weights are
+ˆ𝑤𝑣𝑏 =softmax𝑏
+
+𝑤(0)
+𝑣𝑏 +Δ𝑤 𝑣𝑏
+
+.(4)
+The Stage-1 output position, obtained via LBS (Bones→ Garment),
+is ˆp𝑡
+𝑣 = ˝𝐵
+𝑏=1 ˆ𝑤𝑣𝑏
+
+T𝑡
+𝑏+ΔT𝑡
+𝑏
+
+˜p𝑡
+𝑏, where ˜p𝑡
+𝑏 is from Equation 1. Note
+that rotational components of transforms are added in their 6D
+representation before being converted to affine and applied in this
+equation. Weight corrections allow the model to encode garment-
+structure-specific influence boundaries (e.g. sharper transitions at
+seams, reduced dependence on proximal joints at loose hems) that
+the geodesic initialization cannot capture.
+3.2.2 Stage 2: UV-Space Refinement.The Stage-1 output is pro-
+jected onto the garment’s fixed UV atlas to produce a posed position
+mapP 𝑡
+UV∈R 𝐻×𝑊×3 . This is concatenated with the static feature
+mapF UV∈R 𝐻×𝑊×𝑑 𝑓 from Module [B] and a broadcast pose em-
+bedding 𝝓𝑡 givingX𝑡
+UV =
+
+P𝑡
+UV|F UV|𝝓𝑡
+. A Conv-MLP processes
+X𝑡
+UV and predicts a per-vertex displacement𝛿p𝑣. The final garment
+vertex position isp𝑡
+𝑣 = ˆp𝑡
+𝑣+𝛿 p𝑣. The static feature mapF UV carries
+garment-specific priors (patch layout, seam locations, per-triangle
+stiffness) that are fixed for a given identity and condition the per-
+frame residual prediction without recomputation.
+3.3 Module B: Body and Garment Encoding
+Module [B] computes three identity-specific quantities used by
+Module [A]: shape codez, skin weight corrections Δw, and a static
+UV feature mapF UV. All outputs are computed in a single forward
+pass over the canonical body-garment graph and precomputed.
+Fig. 3. Output of the individual deformation stages in Module [A] for 3
+poses. During training, virtual bones (colored dots) are initially skinned using
+body skinning weights (left). In Stage-1, the auto-regressive coarse-level
+bone deformer correct bone transforms for time𝑡 (middle). After skinning
+the garment to the bones, we add the remaining wrinkle details in Stage-2
+(right) using a Convolutional MLP.
+We construct a Body-Garment-Bones Canonical Graph G𝑐 =
+(V𝑏∪V𝑐,E) by placing body and garment in A-pose and connecting
+each garment vertex to its𝑘-nearest neighbors on the body surface.
+G𝑐 is processed by a message-passing graph network whose
+weights are shared with Module [C]. Physics gradients from Mod-
+ule [C]’s self-supervised loss propagate through these shared weights
+during training, pulling the encoder toward representations that
+reflect cloth-body interaction dynamics. When Module [B] passes
+the static canonical graph through the same encoder, the resulting
+per-vertex featuresF𝑐∈R|V𝑐|×𝑑 𝑓 therefore carry information about
+dynamic behavior implied by the canonical geometry, not just the
+geometry itself.
+Three decoder heads overF𝑐 produce: (1) shape codez, a global
+descriptor of the body-garment pair used to condition Bone-Net
+via Equation 3; (2) skin weight corrections Δw𝑣∈R 𝐵 per garment
+===== PAGE 6 =====
+
+6•Astitva Srivastava, Hsiao-yu Chen, Ryan Goldade, Philipp Herholz, Zhongshi Jiang, Gene Wei-Chin Lin, Lingchen Yang, Nikolaos Sarafianos, Tuur Stuyck, Doug Roble,
+Avinash Sharma, and Egor Larionov
+vertex, refining the geodesic initialization of Equation 2; and (3) per-
+vertex featuresf𝑣∈R 𝑑𝑓 , projected to the UV atlas to formF UV for
+Stage 2.
+3.4 Module C: Temporal Integration
+Module [C] is a temporal integration branch trained jointly with
+Modules [A] and [B] and discarded after training. It serves two
+purposes: generating physically grounded position targets for Mod-
+ule [A], and providing physics gradients that train the shared en-
+coder. Module [C] follows the HOOD architecture [GBH23]: a Mesh-
+GraphNet that takes a sequence of body-garment dynamic graphs
+{M𝑡−2,M𝑡−1,M𝑡} and predicts per-vertex cloth acceleration ¥p𝑣,
+integrated via symplectic Euler:
+v𝑡
+𝑣 =v𝑡−1
+𝑣 +Δ𝑡·¥p 𝑡
+𝑣,p [𝐶],𝑡
+𝑣 =p𝑡−1
+𝑣 +Δ𝑡·v 𝑡
+𝑣.(5)
+3.5 Training and Inference
+Training.Training proceeds in two phases. In the warm-up phase
+(500 epochs), only Module [C] is trained using a self-supervised
+physics loss (Lphys) on its own integrated positions, calculated as:
+Lphys =𝜆𝑠Lstretch+𝜆𝑏Lbend+𝜆𝑐Lcollision+𝜆𝑖Linertia+𝜆 𝑓Lfriction
+(6)
+where the inertia term is:
+Linertia = 1
+|V𝑐|
+∑︁
+𝑣
+p[𝐶],𝑡
+𝑣 −
+
+2p[𝐶],𝑡−1
+𝑣 −p[𝐶],𝑡−2
+𝑣
+
+2
+.(7)
+The remaining loss terms follow the implementation described in
+[GBH23].
+The warm-up phase is necessary for Module [C] to produce phys-
+ically meaningful positions before it can supervise Module [A]; at
+initialization, Module [C]’s outputs are arbitrary. The warmup is
+short relative to total training (0.5% of 100k epochs) and is suffi-
+cient to bring Module [C] into a stable physical regime. In the joint
+training phase (remaining 99.5k epochs), all modules are trained
+with
+L=L phys+L 3D (8)
+whereLphys continues to train Module [C] and L3D trains Mod-
+ule [A]. Module [C] and Module [A] process the same pose sequence.
+We supervise Module [A] to match Module [C]’s physically inte-
+grated positions via,
+L3D =L MSE+L lap+L interp (9)
+The vertex MSE term is,
+LMSE = 1
+|V𝑐|
+∑︁
+𝑣
+p𝑡
+𝑣−p[𝐶],𝑡
+𝑣
+
+2
+2
+,(10)
+which transfers dynamic information, including momentum and in-
+ertial lag, into Module [A] without requiring it to compute garment
+velocities. Since Module [C] is jointly trained, the quality of these
+targets improves over the course of training. The Laplacian term,
+Llap = 1
+|V𝑐|
+∑︁
+𝑣
+p𝑡
+𝑣− 1
+|N(𝑣)|
+∑︁
+𝑢∈N(𝑣)
+p𝑡
+𝑢
+
+2
+2
+(11)
+penalizes local surface irregularity. This is particularly relevant here
+because the influence boundaries of sparse virtual bones can produce
+sharp per-vertex discontinuities in the skinned mesh [ PMJ+22];
+the Laplacian term suppresses these without penalizing smooth
+macroscopic deformation. The interpenetration term,
+Linterp = 1
+|V𝑐|
+∑︁
+𝑣
+max(0,𝜖−𝑑 𝑣)2 (12)
+penalizes garment vertices inside the body surface, where𝑑𝑣 is the
+signed distance to the body and 𝜖 is a clearance margin. This is
+applied directly to Module [A]’s output and is distinct fromLcollision
+in Equation 6, which acts on Module [C]’s simulation state as an
+energy term;Linterp enforces geometric non-penetration on the
+runtime branch independently.
+Gradients fromLphys flow through Module [C]’s encoder, which
+is shared with Module [B]. This causes Module [B]’s canonical-
+graph featuresF𝑐 to reflect cloth dynamics implied by the canonical
+geometry, giving the decoded Δw𝑣 andf 𝑣 structure that a purely
+geometric encoder would not produce.
+WhyLphys cannot be applied directly to Module [A]?Applying
+Lphys directly to Module [A]’s output fails at the inertia term, which
+requires physically consistent garment velocities. Under virtual-
+bone skinning, garment vertex positions are a stateless function of
+the current bone positions, which are themselves determined by
+joint angles: ˆp𝑡
+𝑣 =𝑓 𝑣( ˜p𝑡)=𝑔 𝑣(𝜽𝑡). This has two consequences that
+makeLinertia uninformative when applied to skinning outputs. First,
+all|V𝑐| cloth velocities are a low-rank blend of the𝐾-dimensional
+joint velocity, which cannot represent the locally independent ve-
+locity field of real cloth [ SOC22]. Second, if 𝜽𝑡 =𝜽 𝑡−1 , then the
+apparent velocity ˆv𝑡
+𝑣 =𝑔 𝑣(𝜽𝑡)−𝑔 𝑣(𝜽𝑡−1)= 0for all 𝑣 regardless
+of prior motion, causingLinertia to produce near-zero gradients in
+exactly the regime where cloth dynamics are most pronounced:
+post-deceleration oscillation, fabric settling, and damped swinging.
+Module [C] avoids this by maintainingv𝑡
+𝑣 as a persistent integration
+variable that carries the full history of accelerations forward across
+frames, independent of whether the body is moving. The inertia loss
+on Module [C]’s integrated positions is therefore a well-posed ob-
+jective throughout training. See subsection 4.4 for a visual example
+showing this phenomenon.
+Inference.Module [C] is discarded after training. Module [B] is
+run once per identity to compute and cachez, {Δw𝑣}, andF UV; this
+cost is amortized over all subsequent sequences for that identity.
+Per-frame inference runs only Module [A]: LBS (Skeleton→ Bones)
+→ Bone-Net→ LBS (Bones→ Garment)→ UV rasterization→
+Conv-MLP, conditioned on precomputed Module [B] outputs. The
+per-frame input reduces to𝚯: three frames of joint angles. Per-frame
+cost is independent of garment mesh resolution, simulation history,
+and body-garment graph complexity.
+4 Results & Experiments
+4.1 Dataset & Experimental Setup
+Following the training data strategy from GAPS[CCP24], we employ
+self-supervision using pose sequences from the AMASS dataset,
+without requiring any precomputed physics simulation data. For
+each garment, we evaluate on the same set of six garments from
+the VTO dataset: Tshirt, Tshirt-Unzipped, Pants, Long-Skirt, Dress,
+and Hooded-Tight-Dress. Body shapes are sampled from the SMPL
+model to cover a diverse range of shapes and sizes. All methods
+===== PAGE 7 =====
+
+HyperBones: Realtime Bone-driven Neural Garment Simulation with Hypernetwork Conditioning•7
+Tshirt Tshirt-Unzipped Pants Long-Skirt Dress Hooded-Tight-Dress
+𝜀𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐
+SNUG7.923 14.102 5.814 (±2.391) 7.541 13.287 5.203 (±2.187) 7.108 12.341 4.731 (±2.043) 8.342 14.876 6.103 (±2.812) 5.012 6.341 3.287 (±1.623) 8.712 15.421 6.387 (±3.012)
+NCS3.782 5.498 0.587 (±0.541) 4.103 5.812 0.652 (±0.601) 4.521 5.843 2.187 (±0.712) 4.287 6.123 0.801 (±0.658) 4.312 5.623 0.412 (±0.589) 4.923 6.912 0.698 (±1.087)
+GAPS3.487 5.431 0.132 (±0.443) 3.187 3.971 0.214 (±0.321) 2.456 3.143 0.031 (±0.148) 3.298 4.187 0.158 (±0.334) 3.187 3.971 0.213 (±0.327) 3.812 4.423 0.141 (±0.243)
+HOOD 3.102 4.876 0.098 (±0.381) 2.934 3.701 0.172 (±0.289) 1.721 2.412 0.009 (±0.058) 2.981 3.876 0.131 (±0.297) 2.897 3.654 0.181 (±0.291) 2.712 3.521 0.058 (±0.114)
+Ours w/oL lap 3.712 5.698 0.161 (±0.478) 3.341 4.187 0.247 (±0.358) 2.634 3.312 0.043 (±0.172) 3.487 4.423 0.187 (±0.361) 3.354 4.198 0.241 (±0.354) 4.023 4.687 0.168 (±0.271)
+Ours w/oL linterp 3.412 5.187 6.134 (±2.587) 3.198 4.012 5.498 (±2.312) 2.143 2.834 5.043 (±2.187) 3.287 4.198 6.412 (±2.934) 3.198 3.987 3.512 (±1.743) 3.412 4.187 6.712 (±3.143)
+Ours w/o Conv-Net MLP 4.312 6.187 0.823 (±0.612) 4.587 6.412 0.912 (±0.687) 4.921 6.298 2.512 (±0.823) 4.812 6.798 1.187 (±0.798) 4.612 5.987 0.687 (±0.654) 5.312 7.487 1.012 (±1.187)
+OURS 2.541 3.987 0.063 (±0.241) 2.312 3.101 0.118 (±0.187) 1.698 2.387 0.012 (±0.071) 2.398 3.187 0.089 (±0.198) 2.287 3.076 0.121 (±0.193) 2.687 3.487 0.074 (±0.128)
+Table 1. Quantitative comparison across garments (green is best, Orange is second best)
+.
+Fig. 4.Comparison: GAPS relies on a GRU-based motion state that ac-
+cumulates drift over long sequences, leading to progressive deformation
+artifacts. Our method adopts HOOD’s autoregressive integration scheme,
+maintaining stable simulation quality regardless of sequence length but
+with much improved performance (see supplementary video).
+Method Tshirt Tshirt-Unzipped Pants Long-Skirt Dress Hooded-Tight-Dress
+GAPS2.02 2.02 1.98 2.72 3.02 2.14
+HOOD27.45 26.72 25.22 36.67 49.52 36.61
+OURS 1.07 1.07 1.05 1.16 1.31 1.14
+Table 2. Inference time (ms) per garment; Ours achieve highest simulation
+FPS while maintaining superior quality.
+Tshirt-Unzipped Dress
+No. of Bones𝜀 𝑒 𝜀𝑎 𝜀𝑐 𝜀𝑒 𝜀𝑎 𝜀𝑐
+32 4.812 6.412 0.687 (±0.598) 8.234 11.876 4.123 (±2.187)
+64 2.687 3.487 0.213 (±0.254) 5.432 7.298 2.187 (±1.412)
+128 2.312 3.101 0.118 (±0.187) 2.287 3.076 0.121 (±0.193)
+Table 3. Effect of number of bones on the Tshirt-Unzipped and Dress
+are evaluated on a held-out mixture of AMASS and VTO sequences
+that are not used during training. For quantitative assessment, we
+adopt the error metrics introduced in [CCP24]. Specifically, Edge
+Error𝜖𝑒 measures the mean percentage deviation in edge lengths
+between the rest-pose template and the draped garment, while Area
+Error (𝜖𝑎) quantifies the mean percentage deviation in triangle face
+areas between the template and the draped garment. We refer the
+reader to Chen et al. (GAPS) [CCP24] for the complete mathematical
+definitions of these metrics. In addition,𝜖𝑐 denotes the percentage
+of garment vertices that penetrate the body surface, providing a
+direct measure of physical plausibility; all values are reported prior
+to any post-processing correction.
+4.2 Generalization to Different Body Shapes
+We evaluate generalization to unseen body shapes by testing on a
+diverse set of sampled SMPL body shape parameters not seen during
+training. As shown in Figure 5, our method produces physically
+plausible garment draping across all body shapes, demonstrating
+that the FiLM-conditioned shape modulation in Bone-Net effectively
+decouples identity-specific garment behavior from per-frame pose
+dynamics.
+4.3 Comparison with SOTA methods.
+We compare our approach against SNUG [SOC22], NCS [BME22],
+GAPS [CCP24], and HOOD [GBH23] on six garment types that span
+a broad range of topologies. As shown in Table 1, our method attains
+the lowest values of𝜀𝑒 and𝜀𝑎 across all garments, with the sole ex-
+ception of𝜀𝑐 on tight-fitting garments (Pants, Hooded-Tight-Dress),
+where HOOD’s specialized graph-based collision handling results
+in slightly reduced penetration. GAPS exhibits cumulative drift over
+long sequences due to its GRU-based motion state representation,
+whereas HOOD yields temporally stable simulations at a substan-
+tially higher computational cost. In contrast, our method delivers
+===== PAGE 8 =====
+
+8•Astitva Srivastava, Hsiao-yu Chen, Ryan Goldade, Philipp Herholz, Zhongshi Jiang, Gene Wei-Chin Lin, Lingchen Yang, Nikolaos Sarafianos, Tuur Stuyck, Doug Roble,
+Avinash Sharma, and Egor Larionov
+Fig. 5. Generalization to multiple body shapes.
+Fig. 6.Ablation on Number of Bones: For most garments, 32 bones lead to interpenetration and 64 yield acceptable but imperfect results. For most
+garments, fewer than 128 bones produce visually degraded deformations (see supplementary video).
+Fig. 7.Ablation over Temporal Integration:Applying the physics loss
+directly to Module A’s output produces unstable dynamics (left), as sparse
+bone transforms cannot represent dense per-vertex inertial states. Supervis-
+ing Module A through the per-vertex GNN oracle (Module C) yields stable,
+physically plausible results (right).
+comparable or superior simulation accuracy while operating at more
+than25×the inference speed of HOOD.
+Figure 4 shows qualitative comparison with the two best-performing
+baseline methods, HOOD and GAPS. As shown, GAPS suffers from
+pronounced misalignment, which we attribute to its pre-skinning
+delta updates and its GRU-based pose history representation, both
+of which tend to become noisy over long motion sequences. In
+contrast, the autoregressive formulation employed by HOOD, and
+likewise by our method, does not exhibit such limitations.
+4.4 Ablation Study
+We conduct an ablation study over several architectural design
+choices and loss components in our pipeline, as summarized in Ta-
+ble 1. Additionally, we provide an argument for the necessity of
+temporal alignment module and an analysis over number of bones
+below.
+Local Refinement via ConvMLP:Results from Table 1 highlights
+the impact of the ConvMLP module: its removal leads to severe
+interpenetration artifacts and degenerated triangles (large area er-
+ror), which we attribute to the limited expressiveness of a purely
+bone-based representation (even when equipped with nonlinear
+corrections). Since the underlying dynamics are predominantly lo-
+cal rather than global, the inclusion of a dedicated local refinement
+branch—implemented as the ConvMLP in our case, is essential for
+accurately modeling these effects.
+Regularization terms in 3D Loss:We ablate the regularization
+termsLlap andLinterp in theL3d loss between Module [C] and
+Module [A]. WhenLlap is removed, the resulting meshes exhibit
+larger error margins and degenerate triangles, caused by the lack
+of any global alignment between the output of Module [A] and the
+===== PAGE 9 =====
+
+HyperBones: Realtime Bone-driven Neural Garment Simulation with Hypernetwork Conditioning•9
+output of Module [C]. Therefore, the Laplacian regularizerLlap is
+crucial for enforcing global geometric consistency and preventing
+degeneracies.
+Temporal Alignment vs. Direct Physics-based Supervision:
+Figure 7 presents an evaluation of our MeshGraphNet-based tem-
+poral alignment strategy (Module [C]) against the alternative ap-
+proach of directly imposing physics-based supervision on Module
+[A]. Although the bone representations can, in principle, learn the
+underlying simulation dynamics over time, we observe that enforc-
+ing this supervision directly on Module [A] frequently leads to an
+abrupt breakdown of the simulation in early epochs. This failure
+mode is predominantly induced by early, skinning-induced interpen-
+etrations, which produces degenerate simulation geometry, creating
+simulation instability. For this reason, we first train Module [C] in
+a warm-up phase for 500 epochs, thereby ensuring that the bone-
+deformation module receives physically plausible gradient updates.
+Number of Bones:The number of bones is a crucial factor, as
+it affects both the computational complexity and the ability of a
+network with limited linear behavior to learn over an inherently
+non-linear domain. We aim to minimize the number of bones to
+keep BoneNet’s input dimensionality sufficiently low for real-time
+operation, while simultaneously preserving its capacity to approx-
+imate complex simulation spaces. In order to determine the ideal
+number of bones, we conduct an ablation study on two types of
+garments: a relatively simple, small garment (Tshirt-Unzipped) and
+a loose garment exhibiting more free-form deformation. Table 3
+and Figure 6 demonstrate quantitatively and qualitatively that 128
+bones provide sufficient representational power to capture complex
+non-linear simulation dynamics. Additionally, Table 2 indicates that
+our method remains significantly faster than previous works.
+5 Limitations and Future Work
+We demonstrate that our proposed architecture generalizes over
+body shape and pose for a set of six various garments. However, full
+generalizability is desirable for unlocking a completely automated
+pipeline where newly generated garments can be animated immedi-
+ately. Recent advances in generative techniques have dramatically
+improved garment creation, allowing users to design new cloth-
+ing from simple text prompts, scans, or images [CLK+25, SMR+25,
+LCL+24, SSX+25]. Enabling garment deformation without the need
+for garment specific models will unlock numerous applications.
+6 Conclusion
+We introduced a novel and efficient method to simulate worn gar-
+ment dynamics across diverse body shapes and poses. Our approach
+proposes a novel architecture for distilling large and computation-
+ally expensive neural integration into a lightweight system achiev-
+ing around 25x performance boost on GPU. The system generalizes
+to arbitrary body shapes and motion, and can support up to six
+garments in a single trained model. Through comprehensive exper-
+iments, we show that our method consistently outperforms state-
+of-the-art approaches, enabling garment simulation for real-time
+applications.
+References
+[BME22] Hugo Bertiche, Meysam Madadi, and Sergio Escalera. Neural cloth simula-
+tion.ACM Transactions on Graphics (TOG), 41(6):1–14, 2022.
+[BP07] Ilya Baran and Jovan Popović. Automatic rigging and animation of 3d
+characters. InACM SIGGRAPH, 2007.
+[BW98] David Baraff and Andrew Witkin. Large steps in cloth simulation. In
+Proceedings of the 25th Annual Conference on Computer Graphics and Inter-
+active Techniques, SIGGRAPH ’98, page 43–54, New York, NY, USA, 1998.
+Association for Computing Machinery.
+[CCP24] Ruochen Chen, Liming Chen, and Shaifali Parashar. Gaps: Geometry-
+aware, physics-based, self-supervised neural garment draping. In2024
+International Conference on 3D Vision (3DV), pages 116–125. IEEE, 2024.
+[CCW+23] Yue Chang, Peter Yichen Chen, Zhecheng Wang, Maurizio M. Chiaramonte,
+Kevin Carlberg, and Eitan Grinspun. Licrom: Linear-subspace continuous
+reduced order modeling with neural fields. InSIGGRAPH Asia 2023 Confer-
+ence Papers, SA ’23, New York, NY, USA, 2023. Association for Computing
+Machinery.
+[CLK+25] Hsiao-Yu Chen, Egor Larionov, Ladislav Kavan, Gene Lin, Doug Roble, Olga
+Sorkine-Hornung, and Tuur Stuyck. Dress anyone : Automatic physically-
+based garment pattern refitting.Proc. ACM Comput. Graph. Interact. Tech.,
+8(4), August 2025.
+[CLYY24] Anka He Chen, Ziheng Liu, Yin Yang, and Cem Yuksel. Vertex block descent.
+ACM Transactions on Graphics (TOG), 43(4):1–16, 2024.
+[DASTH10] Edilson De Aguiar, Leonid Sigal, Adrien Treuille, and Jessica K Hodgins.
+Stable spaces for real-time clothing.ACM Transactions on Graphics (ToG),
+29(4):1–9, 2010.
+[DLLG+23] Luca De Luigi, Ren Li, Benoît Guillard, Mathieu Salzmann, and Pascal
+Fua. Drapenet: Garment generation and self-supervised draping. In2023
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR),
+pages 1451–1460, 2023.
+[ELPZ97] Yuval Eldar, Michael Lindenbaum, Moshe Porat, and Yehoshua Y Zeevi. The
+farthest point strategy for progressive image sampling.IEEE transactions
+on image processing, 6(9):1305–1315, 1997.
+[FMD+19] Lawson Fulton, Vismay Modi, David Duvenaud, David I. W. Levin, and
+Alec Jacobson. Latent-space dynamics for reduced deformable simulation.
+Computer Graphics Forum, 2019.
+[GBH23] Artur Grigorev, Michael J. Black, and Otmar Hilliges. Hood: Hierarchical
+graphs for generalized modelling of clothing dynamics. InProceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+(CVPR), pages 16965–16974, June 2023.
+[HDDN19] Daniel Holden, Bang Chi Duong, Sayantan Datta, and Derek
+Nowrouzezahrai. Subspace neural physics: Fast data-driven interactive
+simulation. InProceedings of the 18th annual ACM SIGGRAPH/Eurographics
+Symposium on Computer Animation, pages 1–12, 2019.
+[HLB+23] Oshri Halimi, Egor Larionov, Zohar Barzelay, Philipp Herholz, and Tuur
+Stuyck. Physgraph: Physics-based integration using graph neural net-
+works.arXiv preprint arXiv:2301.11841, 2023.
+[HSX+22] Oshri Halimi, Tuur Stuyck, Donglai Xiang, Timur M Bagautdinov, He Wen,
+Ron Kimmel, Takaaki Shiratori, Chenglei Wu, Yaser Sheikh, and Fabian
+Prada. Pattern-based cloth registration and sparse-view animation.ACM
+Trans. Graph., 41(6):196–1, 2022.
+[HTC+14] Fabian Hahn, Bernhard Thomaszewski, Stelian Coros, Robert W Sumner,
+Forrester Cole, Mark Meyer, Tony DeRose, and Markus Gross. Subspace
+clothing simulation using adaptive bases.ACM Transactions on Graphics
+(TOG), 33(4):1–9, 2014.
+[HXZ+19] Marc Habermann, Weipeng Xu, Michael Zollhöfer, Gerard Pons-Moll, and
+Christian Theobalt. Livecap: Real-time human performance capture from
+monocular video. InACM Transactions on Graphics (Proc. SIGGRAPH),
+2019.
+[JBPS11] Alec Jacobson, Ilya Baran, Jovan Popović, and Olga Sorkine. Bounded
+biharmonic weights for real-time deformation. InACM SIGGRAPH, 2011.
+[JDKL14] Alec Jacobson, Zhigang Deng, Ladislav Kavan, and JP Lewis. Skinning:
+Real-time shape deformation. InACM SIGGRAPH 2014 Courses, 2014.
+[JSH+24] Yuheng Jiang, Zhehao Shen, Yu Hong, Chengcheng Guo, Yize Wu,
+Yingliang Zhang, Jingyi Yu, and Lan Xu. Robust dual gaussian splat-
+ting for immersive human-centric volumetric videos.arXiv preprint
+arXiv:2409.08353, 2024.
+[LCG+24] Yinghao Liu, Enric Corona, Jiatao Gu, Christian Theobalt, Justus Thies,
+and Timo Bolkart. Riggs: Learning rigs for category-level 3d shape and
+pose estimation. InCVPR, 2024.
+[LCL+24] Yifei Li, Hsiao-yu Chen, Egor Larionov, Nikolaos Sarafianos, Wojciech Ma-
+tusik, and Tuur Stuyck. Diffavatar: Simulation-ready garment optimization
+with differentiable simulation. InProceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition (CVPR), pages 4368–4378, June
+2024.
+===== PAGE 10 =====
+
+10•Astitva Srivastava, Hsiao-yu Chen, Ryan Goldade, Philipp Herholz, Zhongshi Jiang, Gene Wei-Chin Lin, Lingchen Yang, Nikolaos Sarafianos, Tuur Stuyck, Doug Roble,
+Avinash Sharma, and Egor Larionov
+[LD12] Binh Huy Le and Zhigang Deng. Smooth skinning decomposition with
+rigid bones.ACM Transactions on Graphics (TOG), 31(6):1–10, 2012.
+[LLC+26] Gene Wei-Chin Lin, Egor Larionov, Hsiao-yu Chen, Doug Roble, and
+Tuur Stuyck. Neuralocks: Real-time dynamic neural hair simulation. In
+Computer Graphics Forum, page e70407. Wiley Online Library, 2026.
+[LLL+25] Yue Li, Gene Wei-Chin Lin, Egor Larionov, Aljaz Bozic, Doug Roble,
+Ladislav Kavan, Stelian Coros, Bernhard Thomaszewski, Tuur Stuyck,
+and Hsiao-Yu Chen. Self-supervised learning of latent space dynamics.
+Proc. ACM Comput. Graph. Interact. Tech., 8(4), August 2025.
+[LMR+15] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll,
+and Michael J. Black. SMPL: A skinned multi-person linear model.ACM
+Trans. Graphics (Proc. SIGGRAPH Asia), 34(6):248:1–248:16, October 2015.
+[LSC+26] Egor Larionov, Igor Santesteban, Hsiao-yu Chen, Gene Wei-Chin Lin,
+Philipp Herholz, Ryan Goldade, Ladislav Kavan, Doug Roble, and Tuur
+Stuyck. Skincells: Sparse skinning using voronoi cells. InComputer Graph-
+ics Forum, page e70381. Wiley Online Library, 2026.
+[LSL+24] Tianxing Li, Rui Shi, Zihui Li, Takashi Kanai, and Qing Zhu. Efficient defor-
+mation learning of varied garments with a structure-preserving multilevel
+framework.Proceedings of the ACM on Computer Graphics and Interactive
+Techniques, 7(1):1–19, 2024.
+[LTY+24] Yudi Li, Min Tang, Yun Yang, Ruofeng Tong, Shuangcai Yang, Yao Li, Bailin
+An, and Qilong Kou. Ctsn: Predicting cloth deformation for skeleton-based
+characters with a two-stream skinning network.Computational Visual
+Media, 10(3):471–485, 2024.
+[LWK+24] Peizhuo Li, Tuanfeng Y Wang, Timur Levent Kesdogan, Duygu Ceylan,
+and Olga Sorkine-Hornung. Neural garment dynamics via manifold-aware
+transformers. InComputer Graphics Forum, volume 43, page e15028. Wiley
+Online Library, 2024.
+[LYL+23] Jonas Luiten, Xin Yu, Bastian Leibe, Luc Van Gool, and Andreas Geiger.
+Dynamic 3d gaussians: Tracking by learning an implicit deformation graph.
+InNeurIPS, 2023.
+[MLW+25] Linzhan Mou, Jiahui Lei, Chen Wang, Lingjie Liu, and Kostas Daniilidis.
+Dimo: Diverse 3d motion generation for arbitrary objects. InICCV, 2025.
+[MMC16] Miles Macklin, Matthias Müller, and Nuttapong Chentanez. Xpbd: position-
+based simulation of compliant constrained dynamics. InProceedings of the
+9th International Conference on Motion in Games, pages 49–54, 2016.
+[MSP+24] Vismay Modi, Nicholas Sharp, Or Perel, Shinjiro Sueda, and David I. W.
+Levin. Simplicits: Mesh-free, geometry-agnostic elastic simulation.ACM
+Trans. Graph., 43(4), July 2024.
+[NFS15] Richard A. Newcombe, Dieter Fox, and Steven M. Seitz. Dynamicfusion:
+Reconstruction and tracking of non-rigid scenes in real time. InCVPR,
+2015.
+[PFSGB21] Tobias Pfaff, Meire Fortunato, Alvaro Sanchez-Gonzalez, and Peter
+Battaglia. Learning mesh-based simulation with graph networks. InInter-
+national Conference on Learning Representations, 2021.
+[PLPM20] Chaitanya Patel, Zhouyingcheng Liao, and Gerard Pons-Moll. Tailornet:
+Predicting clothing in 3d as a function of human pose, shape and garment
+style. InProceedings of the IEEE/CVF conference on computer vision and
+pattern recognition, pages 7365–7375, 2020.
+[PMJ+22] Xiaoyu Pan, Jiaming Mai, Xinwei Jiang, Dongxue Tang, Jingxiang Li, Tian-
+jia Shao, Kun Zhou, Xiaogang Jin, and Dinesh Manocha. Predicting loose-
+fitting garment deformations using bone-driven motion networks. InACM
+SIGGRAPH 2022 Conference Proceedings, SIGGRAPH ’22, New York, NY,
+USA, 2022. Association for Computing Machinery.
+[PSDV+18] Ethan Perez, Florian Strub, Harm De Vries, Vincent Dumoulin, and Aaron
+Courville. Film: Visual reasoning with a general conditioning layer. In
+Proceedings of the AAAI conference on artificial intelligence, volume 32,
+2018.
+[SLL+25] Tuur Stuyck, Gene Wei-Chin Lin, Egor Larionov, Hsiao-yu Chen, Aljaz
+Bozic, Nikolaos Sarafianos, and Doug Roble. Quaffure: Real-time quasi-
+static neural hair simulation. InProceedings of the Computer Vision and
+Pattern Recognition Conference, pages 239–249, 2025.
+[SMR+25] Astitva Srivastava, Pranav Manu, Amit Raj, Varun Jampani, and Avinash
+Sharma. Wordrobe: Text-guided generation of textured 3d garments. In
+Aleš Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler,
+and Gül Varol, editors,Computer Vision – ECCV 2024, pages 458–475, Cham,
+2025. Springer Nature Switzerland.
+[SOC22] Igor Santesteban, Miguel A. Otaduy, and Dan Casas. Snug: Self-supervised
+neural dynamic garments. InProceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition (CVPR), pages 8140–8150, June
+2022.
+[SSX+25] Nikolaos Sarafianos, Tuur Stuyck, Xiaoyu Xiang, Yilei Li, Jovan Popovic,
+and Rakesh Ranjan. Garment3dgen: 3d garment stylization and texture
+generation. In2025 International Conference on 3D Vision (3DV), pages
+1382–1393. IEEE, 2025.
+[Stu22] Tuur Stuyck.Cloth simulation for computer graphics. Springer Nature, 2022.
+[SZGP07] Robert W. Sumner, Matthias Zwicker, Craig Gotsman, and Mark Pauly.
+Embedded deformation for shape manipulation. InACM SIGGRAPH, 2007.
+[WSS+25] Shaofei Wang, Tomas Simon, Igor Santesteban, Timur Bagautdinov, Junx-
+uan Li, Vasu Agrawal, Fabian Prada, Shoou-I Yu, Pace Nalbone, Matt Gram-
+lich, Roman Lubachersky, Chenglei Wu, Javier Romero, Jason Saragih,
+Michael Zollhoefer, Andreas Geiger, Siyu Tang, and Shunsuke Saito. Re-
+lightable full-body gaussian codec avatars. InProceedings of the Special
+Interest Group on Computer Graphics and Interactive Techniques Conference
+Conference Papers, SIGGRAPH Conference Papers ’25, New York, NY, USA,
+2025. Association for Computing Machinery.
+[ZL24] Meng Zhang and Jun Li. Neural garment dynamic super-resolution. In
+SIGGRAPH Asia 2024 Conference Papers, pages 1–11, 2024.

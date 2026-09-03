@@ -1,0 +1,8 @@
+# Obsidian 应用配置（机器相关，不入版本管理）
+.obsidian/
+
+# Obsidian 回收站
+.trash/
+
+# Claudian 客户端会话/设备元数据（机器相关）
+.claudian/

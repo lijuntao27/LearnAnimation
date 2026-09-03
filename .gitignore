@@ -1,0 +1,15 @@
+# ---- 本地代码工程：不纳入 LearnAnimation（各自独立 git / 上游管理）----
+# 地址与关联论文记录在 wiki/TheWiki/CodeRepos.md
+/Dual-Quaternion-Skinning-Sample-Codes/
+/VirtualBones/
+/motion_inbetweening/
+/physkin/
+/SkirtQNN/
+
+# ---- Claude Code 本地配置与技能（机器相关）----
+.claude/
+
+# ---- 系统 / 编辑器临时文件 ----
+Thumbs.db
+Desktop.ini
+.DS_Store

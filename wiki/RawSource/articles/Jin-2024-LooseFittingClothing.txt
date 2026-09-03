@@ -1,0 +1,926 @@
+                                        A Neural-Network-Based Approach for Loose-Fitting Clothing
+
+                                        YONGXU JIN, Stanford University, USA and Epic Games, USA
+                                        DALTON OMENS, Stanford University, USA and Epic Games, USA
+                                        ZHENGLIN GENG, Epic Games, USA
+                                        JOSEPH TERAN, University of California, Davis, USA and Epic Games, USA
+                                        ABISHEK KUMAR, Sony Corporation of America, R&D US Laboratory, USA
+                                        KENJI TASHIRO, Sony Corporation of America, R&D US Laboratory, USA
+                                        RONALD FEDKIW, Stanford University, USA and Epic Games, USA
+
+arXiv:2404.16896v1 [cs.GR] 25 Apr 2024  Fig. 1. We introduce a rope chain simulation approach to efficiently model cloth dynamics using a small number of degrees of freedom. Analytic signed
+                                        distance functions are used to efficiently manage collisions with the body mesh. Neural networks are utilized to skin a mesh from the simulated degrees of
+                                        freedom and to capture the detailed mesh shapes. Our results (the second and fifth images) not only produce dynamics similar to full numerical simulations
+                                        (the third and sixth images) but also do not suffer from the locking and/or overstretching typical of real-time physics-based simulations.
+
+                                        Since loose-fitting clothing contains dynamic modes that have proven to be            order to adequately generalize to new examples, QNNs perform well with
+                                        difficult to predict via neural networks, we first illustrate how to coarsely         significantly less training data.
+                                        approximate these modes with a real-time numerical algorithm specifically
+                                        designed to mimic the most important ballistic features of a classical nu-            CCS Concepts: · Computing methodologies  Animation; Neural
+                                        merical simulation. Although there is some flexibility in the choice of the           networks; Physical simulation.
+                                        numerical algorithm used as a proxy for full simulation, it is essential that
+                                        the stability and accuracy be independent from any time step restriction or           Additional Key Words and Phrases: Cloth animation, deep learning, skinning
+                                        similar requirements in order to facilitate real-time performance. In order
+                                        to reduce the number of degrees of freedom that require approximations to             1 INTRODUCTION
+                                        their dynamics, we simulate rigid frames and use skinning to reconstruct
+                                        a rough approximation to a desirable mesh; as one might expect, neural-               Animation of digital clothing has been a captivating research area for
+                                        network-based skinning seems to perform better than linear blend skinning             decades due to its importance in creating realistic digital humans.
+                                        in this scenario. Improved high frequency deformations are subsequently               While traditional physics-based simulation methods [Baraff and
+                                        added to the skinned mesh via a quasistatic neural network (QNN). In con-             Witkin 1998; Bridson et al. 2002; Choi and Ko 2002] can generate
+                                        trast to recurrent neural networks that require a plethora of training data in        high-fidelity results, the inability to achieve real-time performance
+                                                                                                                              at high resolutions restricts their utility in contemporary real-time
+                                        Authors' addresses: Yongxu Jin, yxjin@stanford.edu, Stanford University, Stanford,    applications such as video games, VR/AR, and virtual try-on systems.
+                                        California, USA and Epic Games, Cary, North Carolina, USA; Dalton Omens, domens@      In light of recent advancements in GPU hardware, there has been
+                                        stanford.edu, Stanford University, Stanford, California, USA and Epic Games, Cary,    a surge of interest in leveraging neural networks to approximate
+                                        North Carolina, USA; Zhenglin Geng, zhenglin.geng@epicgames.com, Epic Games,          physics-based simulations, see e.g. [Lewin 2021; Patel et al. 2020;
+                                        Cary, North Carolina, USA; Joseph Teran, jteran@math.ucdavis.edu, University of       Pfaff et al. 2021; Raissi et al. 2019; Sanchez-Gonzalez et al. 2020;
+                                        California, Davis, Davis, California, USA and Epic Games, Cary, North Carolina, USA;  Santesteban et al. 2019]
+                                        Abishek Kumar, Abishek.Kumar@sony.com, Sony Corporation of America, R&D US
+                                        Laboratory, USA; Kenji Tashiro, Kenji.Tashiro@sony.com, Sony Corporation of America,     Tight or close fitting garments such as shirts, pants, etc. typically
+                                        R&D US Laboratory, USA; Ronald Fedkiw, rfedkiw@stanford.edu, Stanford University,     exhibit only subtle dynamic behaviors; thus, capturing quasistatic
+                                        Stanford, California, USA and Epic Games, Cary, North Carolina, USA.                  shape information is more important than modelling the ballistic
+2 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+motion, see e.g. [Bertiche et al. 2021a; Jin et al. 2020; Lahner et al.   [Bridson et al. 2003]. In order to avoid computationally expen-
+2018; Patel et al. 2020]. Quasistatic shape information can be cap-       sive grid-based SDFs, the SDF can be defined either by a set of
+tured by various skinning techniques, by neural networks that lack        closed-form primitives (desirable for real-time applications like
+temporal information (we will refer to these as quasistatic neural        video games) or by a neural network (see e.g. [Park et al. 2019;
+networks or QNNs), or by a combination of skinning and quasistatic        Remelli et al. 2020]). Similar collision treatment can also be applied
+neural network approaches. While some low-frequency vibration             to the degrees of freedom of the full cloth mesh. Both the skin-
+of tight-fitting clothing can be captured by underlying flesh motion      ning neural network and the QNN are trained with an additional
+(see e.g. [Jin et al. 2022]), modelling the pronounced ballistic motion   PINN-style [Raissi et al. 2019] collision loss (using the SDF) in order
+associated with loose-fitting clothing such as skirts, dresses, capes,    to obtain network parameters that favor collision-free cloth mesh
+etc. is more challenging. Skinning and QNN based approaches have          degrees of freedom; importantly, adding collisions in this fashion
+not been able to successfully model pronounced ballistic motion;          does not require modifications to the network architecture nor does
+thus, researchers have explored alternative network architectures         it add any computational expense to inference.
+that incorporate temporal history, most notably recurrent neural
+networks (RNNs), see e.g. [Pan et al. 2022; Santesteban et al. 2022;         To summarize our contributions:
+Zhang et al. 2021]. Unfortunately, the amount of training data re-
+quired to robustly model temporal transitions between states (espe-             · We propose a hybrid framework for animating loose-fitting
+cially when considering the need for generalization) is significantly              clothing that blends together the efficacy of physics simu-
+greater than that required to model the states themselves. Moreover,               lation for capturing ballistic motion and the efficiency of
+increased network capacity is required in order to properly capture                neural networks for skinning and shape inference.
+the numerous state transitions present in this increased volume of
+training data. These issues typically cause recurrent neural network            · In particular, we propose a novel simulation method for
+approaches to overfit and thus generalize poorly.                                  low resolution (and loose-fitting) clothing via ballistic rope
+                                                                                   chains, which are used to reconsturct a full cloth mesh with
+   Since a physics-based simulation readily models ballistic motions               the aid of neural networks for both skinning and shape
+but does not efficiently scale to a large number of degrees of freedom             inference.
+and neural networks readily deal with a large number of degrees of
+freedom but struggle with temporal state transitions, we pursue a               · We propose a novel collision handling method with analytic
+more optimal hybrid approach that uses a small number of degrees                   SDFs, using history-based information in order to improve
+of freedom physics simulation to capture dynamics and a neural net-                both robustness and efficiency for the sake of real-time ap-
+work to capture a high resolution shape. In particular, we physically              plications.
+simulate such a low number of degrees of freedom that they are
+best viewed as virtual bones as opposed to being viewed as a subset       2 RELATED WORK
+of a higher resolution mesh (similar to [Pan et al. 2022; Zhao et al.
+2023]); thus, we rely on skinning (driven by a neural network) in            Physics Simulation: The physical simulation of cloth has a
+order to construct a coarse approximation to the desired mesh from        long hisory in computer graphics, dating back to [Terzopoulos et al.
+the simulated degrees of freedom. Given this coarsely approximated        1987]; however, it gained significant popularity due to the implicit
+dynamic mesh, a quasistatic neural network is then used to obtain         time integration approach proposed in [Baraff and Witkin 1998].
+a more desirable higher resolution mesh.                                  In order to overcome the overly-damped (underwater) appearance
+                                                                          of implicit time integration, [Bridson et al. 2002, 2003] introduced
+   Since we rely on the neural network's ability to capture the shape     a semi-implicit time integration approach (central differencing in
+of the cloth, the physics simulation does not require all the usual (and  computational mechanics) that is explicit on the elastic vibrational
+computationally expensive) techniques for simulating stretching,          modes and implicit on the damping modes. Although offline meth-
+bending, compression, etc.; thus, we devise a novel approach that         ods could simulate very high resolution cloth even 15 years ago (see
+connects our virtual bones (or rigid frames) into vertical rope chains.   [Selle et al. 2008]), position based dynamics (starting with [Müller
+Each rope is designed to be inextensible yet shrinkable, avoiding         et al. 2007]) has been the method of choice for most real-time appli-
+undesirable locking or rubbery buckling artifacts (see [Jin et al.        cations. Other interesting contributions include discussions on the
+2017] for detailed insights). Optional spring forces can be included      buckling instability [Choi and Ko 2002], overcoming locking [Jin
+in order to softly constrain the distances between different rope         et al. 2017], etc.
+chains and/or to regulate the shrinking of each rope (if desired).
+Compared to low resolution cloth simulation, the rope chains can             Neural Physics: Many researchers have aimed to mimic physics
+be robustly simulated with large time steps thus enabling real-time       simulations via neural networks and various other data-driven tech-
+performance. Instead of simulating the rotational (in additional to       niques. Early works include: [De Aguiar et al. 2010; Hahn et al.
+translational) degrees of freedom typically required in order to skin     2014] used a PCA subspace, [Guan et al. 2012] predicted a cloth
+a coarse mesh from virtual bones (or rigid frames), we utilize a          mesh from pose history and body shape, [Kim et al. 2013] used
+neural network so that the garment can be skinned directly from           motion graphs, and [Loper et al. 2015; Pons-Moll et al. 2015] used
+the simulated translational degrees of freedom.                           linear auto-regression. As deep learning gained popularity, a num-
+                                                                          ber of authors embraced neural networks. [Luo et al. 2018] used a
+   Collisions between the body and the rope chain degrees of free-        neural network to add non-linear displacements on top of linear
+dom are facilitated via signed distance functions (SDFs), see e.g.        elasticity. [Holden et al. 2019] used a neural network in a PCA sub-
+                                                                          space to replace time integration. [Fulton et al. 2019; Tan et al. 2020;
+                                                                          Wang et al. 2019] all aimed to integrate state transitions in a latent
+space (see also [Zhang et al. 2021]). [Chentanez et al. 2020; Li et al.                      A Neural-Network-Based Approach for Loose-Fitting Clothing · 3
+2022; Pfaff et al. 2021; Sanchez-Gonzalez et al. 2020] all used graph
+neural networks, which can embrace the typical physics based sim-         Fig. 2. The loose-fitting garments that we use for numerical experiments.
+ulation notion of a stencil (see also [Zheng et al. 2021]). [Grigorev     The cape mesh consists of 12690 vertices, and we define 10 rope chains with
+et al. 2023; Santesteban et al. 2022] used a PINN-style objective         13-15 virtual bones in each chain (reducing the total DOFs by a factor of
+function. Although PINNs (first proposed in [Raissi et al. 2019]) are     approximately 90). The skirt mesh consists of 18546 vertices, and we define
+self-supervised and as such do not require ground truth data, there       26 rope chains with 9 virtual bones in each chain (reducing the total DOFs
+is nothing special about their architecture implying that they need       by a factor of approximately 80). Importantly, the large reduction in the
+just as much training data as any other method in order to properly       number of DOFs is highly beneficial for both RAM and cache performance,
+generalize to unseen data. [Shao et al. 2023] used Transformers. [Li      not just CPU performance. Note that the unattached virtual bones near the
+et al. 2023] used three networks to capture static, coarse, and wrin-     top of both the cape and the skirt are not simulated, but they will be used
+kle dynamics separately. Most similar to our approach, [Diao et al.       for skinning (see Section 7).
+2023; Pan et al. 2022; Zhao et al. 2023] used virtual bones, skinning,
+and/or super-resolution techniques; however, (unlike us) they used        Wyvill et al. 1986]). Neural network approximations to SDFs have
+RNNs to animate the virtual bones.                                        the potential to be efficient enough to be used in real-time applica-
+                                                                          tions. Inference is typically fast enough, but the amount of network
+   Rigging and Skinning: There is a long history of rigging and           parameters required (or new network parameters required, when
+skinning in computer graphics, although not necessarily geared            switching from one SDF to another) needs to be small enough to be
+towards cloth animation. We refer interested readers to [Magnenat         efficiently loaded and/or stored in memory. We refer the interested
+et al. 1988] for linear blend skinning, [Lewis et al. 2000] for pose      reader to [Mehta et al. 2022; Park et al. 2019; Remelli et al. 2020;
+space deformation, [Kurihara and Miyata 2004] for weighted pose           Saito et al. 2019; Shen et al. 2021; Wu et al. 2023] for various details
+space deformation, [Kavan et al. 2007, 2008] for dual quaternion          (and discussions on differentiability).
+skinning, and [Rumman and Fratarcangeli 2017] for a survey. Other
+interesting works include the parametric body models in [Anguelov            Physics-Informed Neural Networks (PINNs): For neural net-
+et al. 2005] (SCAPE) and [Loper et al. 2015] (SMPL) and the joint         work inferenced cloth, the computational burden from processing
+extraction in [Le and Deng 2012] (SSDR). It is difficult to skin cloth-   collisions can be alleviated to some degree by utilizing interpenetration-
+ing (especially when it is loose-fitting) using standard (non-neural)     free training data. Unfortunately, regularization (which is gener-
+skinning techniques; however, see e.g. [Wang et al. 2010; Xu et al.       ally necessary and desirable) prevents inferenced cloth from being
+2014].                                                                    interpenetration-free even when the training data is interpenetration-
+                                                                          free. Thus, PINN-style [Raissi et al. 2019] collision losses can be quite
+   Neural Shape: There have been a number of efforts to infer             useful during training (see [Bertiche et al. 2021a,b; Gundogdu et al.
+shape (and appearance, see [Lahner et al. 2018]) using neural net-        2019; Santesteban et al. 2022, 2021]), as they allow one to increase
+works. [Bailey et al. 2018] added per-vertex displacements on top         the penalty on cloth-body interpenetrations without forcing overfit-
+of the skinned body mesh, and [Bailey et al. 2020] similarly added        ting to the interpenetration-free training data. The PINN losses can
+per-vertex displacements on top of a skinned face mesh. [Jin et al.       be made as stiff as desired while otherwise maintaining desirable
+2022] also added per-vertex displacements on top of skinned body          regularization on the deviation of the cloth from the training data
+mesh, but augmented these with dynamic motion from analytic               positions.
+springs. For cloth, there have been various attempts to create a high
+resolution mesh from the physics simulation of a coarser mesh,            3 ROPE CHAIN SIMULATION
+see e.g. [Chentanez et al. 2020; Kavan et al. 2011; Oh et al. 2018].      Given a garment mesh, we define a set of virtual bones distributed
+Inferring cloth from body pose and shape alone (without a coarse          across the garment (either manually or by a procedural algorithm
+simulation mesh) is significantly more difficult, see e.g. [Bertiche      such as SSDR [Le and Deng 2012]); then, the virtual bones are
+et al. 2021a; Gundogdu et al. 2019; Jin et al. 2020; Lee et al. 2023;     interconnected vertically to form a set of simulatable rope chains
+Lewin 2021; Li et al. 2024; Patel et al. 2020; Santesteban et al. 2019;   (see Figure 2). Not only does this significantly reduce the number
+Tan et al. 2022].                                                         of degrees of freedom that need to be simulated, but (we argue
+                                                                          that) the rope chains provide a much better approximation to the
+   Collisions: The successful approach to cloth-cloth self collisions     desired ballistic degrees of freedom than a rubbery mass-spring
+using continuous collision detection (CCD) in [Bridson et al. 2002]       mesh does: Rope chains can be made to swing and rotate freely,
+(which leveraged [Provot 1997]) led to a plethora of work on improv-
+ing the efficiency of  ( log ) collision detection (see e.g. [Govin-
+daraju et al. 2005; Li et al. 2020; Sud et al. 2006; Tang et al. 2014,
+2018]); however, for cloth-body collisions, signed distance functions
+(SDFs) remain prevalent due to their more efficient  (1) cost (see
+e.g. [Bridson et al. 2003]). The main drawback of SDFs is that the
+three dimensional discretization of the volumetric field is expensive
+to load and store in memory; thus, analytic SDFs are more popular
+for real-time applications (see e.g. [Blinn 1982; Nishimura et al. 1985;
+4 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+Fig. 3. The far left subfigure shows a a coarsely discretized mesh with         Fig. 4. In this figure, we simulate two virtual bones connected by a single
+position constraints on the five red nodes. The next three subfigures show the  rope with the top virtual bone fixed and the bottom virtual bone free to
+results of steady state simulations using a decreasing spring stiffness (from   rock back and forth as a pendulum. The results compare well to the analytic
+left to right). The final subfigure shows a rope chain simulation (the rope     solution for pendulum motion for both shorter times (left) and longer times
+chains are shaded green) of the same degrees of freedom. The mass-spring        (right), illustrating the efficacy of our numerical approach.
+simulations lock with stiffer springs and overstrech with weaker springs.
+The spring stiffness in the middle subfigure was chosen to approximately        rope; however, there is no penalty for slack (|ì | =  < , ) in
+match the downward stretching extent of the rope chain simulation, which        the rope. Except for ì0, various external forces ì, are applied to
+is what one would expect without overstretching; however, locking occurs        the virtual bones. Examples include gravity ì = ì, wind drag
+since the springs are still too stiff.                                          ì = - (ì - ì ), etc. In order to prevent a rope chain
+                                                                                from deviating too far from its neighboring rope chains, springs can
+whereas a mass-spring system follows linearized rotations resisted              be attached laterally connecting each virtual bone to its neighbors
+                                                                                on neighboring rope chains. We treat these as soft constraints, meant
+by spring stretching. Rope chains can be made to buckle freely,                 to influence but not overly dictate the simulation; thus, they are
+                                                                                added to ì, and given the same relative importance as gravity,
+whereas a mass-spring system over-resists buckling (locking when                wind drag, and other similar forces. One may also desire forces that
+                                                                                aim to preserve rest angles between consecutive pairs of virtual
+under-discretized, see e.g. [Jin et al. 2017]). Enforcing inextensibility       bones, in order to coerce the cloth towards its rest shape. These
+                                                                                forces would also be included in ì, .
+is trivial (from root to tip) for a rope chain, whereas various ad-hoc
+                                                                                   When a rope reaches its maximal length , , the two virtual
+techniques are required in order to prevent over-stretching for a               bones it attaches to will rotate around each other. The magnitude
+                                                                                of the centripetal force required to maintain this rotation is
+mass-spring simulation. Etc. See Figure 3.
+
+A semi-implicit Newmark style time integration scheme is used
+
+separately for each rope chain (see e.g. [Bridson et al. 2003]):                                            |(ì-1 - ì ) - (ì-1 - ì ) · ^ ^ |2
+
+     + 12   ì(ì,ì )                                                             , =  -1                     |ì-1 - ì |
+(1) ì = ì + 2 
+                     ì     1
+(2)  ì+1  =  ì  +       +  2                                                          |(ì - ì ) - (ì - ì ) · ^ ^ |2
+                                                                                =  |ì - ì | (1)
+(3)  Resolve  collisions,  perturbing               ì+1  and  ì+  1
+                                                                  2
+
+     +1       + 1       ì  (  ì  +1  ,  ì  +  1  )
+(4) ì = ì 2 + 2                               2
+
+                                                                                where ì = -1ì-1+ì is the center of mass, ì = -1ì-1+ ì
+
+This is oftern referred to as central differencing in the computa-               -1+                                                            -1+
+
+tional mechanics literature. Central differencing preserves rich high-          is the velocity at the center of mass, and ^  =    ì  is unit length (i.e.
+                                                                                                                                   
+
+frequency dynamic motion significantly better than fully-implicit               a direction). For the first rope, which connects the kinematic ì0
+
+methods (such as backward Euler) do. The velocity updates (steps                with ì1, ì = ì0 and ì = ì0 due to 0 =  (note that second line
+
+1 and 4) are discussed in detail in Section 4, the position update              of Equation 1 needs to be used to calculate ,1, in order to avoid
+
+(step 2) is discussed in detail in Section 5, and collisions (step 3) are       dealing with L'Hopital's rule in the first line).
+
+discussed in detail in Section 6. See Figure 4.                                 When a rope reaches its maximal length , , an additional
+
+4 VELOCITY UPDATE                                                               tension force with magnitude   0 is added to the non-kinematic
+
+Given a rope chain, let ì0, ..., ì denote the virtual bones from root           virtual bones it attaches to (the kinematic root ignores these forces).
+to tip where ì0 is kinematically constrained to follow some part of
+the body (or some other object). The magnitude of each ì = ì -ì-1               The net force in the virtual bones can be defined via
+should never exceed the maximal length , of the corresponding
+                                                                                                            ì, = ì, - ^ + +1^+1                (2a)
+
+                                                                                                            ì, = ì, - ^                        (2b)
+                                                                                         A Neural-Network-Based Approach for Loose-Fitting Clothing · 5
+
+where   {1, ...,  - 1} and  = 0 whenever  < , . In order to
+preserve the rotational motion for each taut rope,
+
+ì,1 · ^1  -,1 + 1ì0 · ^1                (3a)
+
+ì, · ^ - ì, -1 · ^  -2,                 (3b)
+
+where   {2, ..., } and the ì0 term accounts for the motion of the               Fig. 5. Motion of a single swinging rope chain, showcasing varying numbers
+kinematic root. Substituting Equations 2a and 2b into Equations 3a              of Gauss-Seidel iterations. Left to right: 1, 5, 10 iterations, and iterating
+and 3b gives                                                                    until the relative error is smaller than a tolerance of 10-6. With more it-
+                                                                                erations, the rope chain is less damped (as expected). The same number
+                    -1 + ^2 · ^12  -ì,1 · ^1 - ,1 + 1ì0 · ^1                    of iterations (or the same tolerance) was used for both the tension and
+                                                                          (4a)  impulse computations. Note that it might be more efficient (depending on
+                                                                                the application) to use a different number of iterations on the tension and
+^-1 · ^-1 - 2 + ^+1 · ^+1  (ì,-1 - ì, ) · ^ - 2,                                impulse computations.
+                                                                          (4b)
+
+      ^-1 · ^-1 - 2  (ì,-1 - ì,) · ^ - 2,
+                                                                          (4c)
+
+where   {2, ..., -1}. This tri-diagonal linear system of inequalities           must hold, where   {1, ..., } . Substituting Equations 6a and 6b
+(for the unknown tension) decouples into separate blocks whenever               into Equation 7 gives
+a slack rope has  < , or two consecutive ropes are orthogonal
+(with a dot product of zero). For computational efficiency, we iterate                                 1 ^2 · ^1                            ^
+these equations in tip-to-root order (from bottom to top in Equation                                   - 1 +         2  (ì,0 - ì,1) · 1
+4) using Gauss-Seidel; for most real-time applications, typically only                                 1          1
+one tip-to-root sweep is required. In particular, we rewrite Equations                                                                      (8a)
+4a, 4b, and 4c in reverse order as
+                                                                                ^-1 · ^          1  1      ^+1 · ^                             ^
+                                                                                         -1 - (     + ) +           +1  (ì, -1 - ì, ) · 
+                                                                                 -1               -1       
+
+                                                                                                                                            (8b)
+
+  ( (5a) ì, - ì,-1) · ^ + 2, + ^-1 · ^-1                                        ^-1 · ^  -1 - (     1      1                                ^
+                                     2                                                                 + )  (ì,-1 - ì,) · 
+                                                                                 - 1                -1 
+   (ì, - ì,-1) · ^ + 2, + ^-1 · ^-1 + ^+1 · ^+1                                                                                             (8c)
+                                         2
+                                                                          (5b)  where   {2, ..., -1}. This tri-diagonal linear system of inequalities
+                                                                                decouples into separate blocks whenever a slack rope has  <
+1  ì,1 · ^1 + ,1 - 1ì0 · ^1 + ^2 · ^12  (5c)                                    , or two consecutive ropes are orthogonal. For computational
+                                                                                efficiency, we iterate these equations in root-to-tip order (from top
+and enforce them sequentially (from top to bottom in Equation 5)                to bottom in Equation 8) using Gauss-Seidel; for most real-time
+by choosing each  equal to the larger between zero and right hand               applications, typically only one root-to-tip sweep is required. In
+side.                                                                           particular, we rewrite 8a, 8b, and 8c as
+
+   After solving for  via Equation 5, Equation 2 can be used to find                                   ^ ^2 · ^1
+the net force ì, on each non-kinematic virtual bone. Given ì,                   1  1 (ì,1 - ì,0) · 1 +     1      2                         (9a)
+for each non-kinematic virtual bone, the velocity can be updated
+in any order (for both step 1 and step 4 of the time integration); in              -1                             ^ ^-1 · ^        ^+1 · ^  +1
+addition, the velocity of the kinematic virtual bone (the root) should                 -1 +      (ì, - ì, -1) ·  +           -1 +
+be updated as well.                                                                                                   -1           
+
+   The updated velocities may be subject to an additional instanta-                                                                         (9b)
+neous impulse of magnitude   0 whenever a rope is at its maximal
+length , . Let ì, and ì, be the velocity before and after                         -1                                 ^ ^-1 · ^      - 1
+(respectively) this instantaneous exchange of momentum; then, the                      -1 +         (ì, - ì,-1) ·  +       - 1
+impulses along the ropes are applied via
+                                                                                                                                            (9c)
+
+ì, = ì, - ^ + +1^+1                     (6a)                                    and enforce them sequentially (from top to bottom in Equation 9)
+                                                                                by choosing each  equal to the larger between zero and right hand
+ì, = ì, - ^                             (6b)                                    side.
+
+where   {1, ...,  - 1} and  = 0 whenever  < , . Note that                          Note that we chose tip to root for the tension so that each virtual
+ì,0 = ì,0, since 0 = . In order to prevent each taut rope                       bone feels the weight of all the virtual bones below it even when
+from overstretching,                                                            executing only one iteration. Conversely, we chose root to tip for
+                                                                                the impulse since it has been argued (and shown) to work well
+(ì, - ì,-1) · ^  0                      (7)                                     for contact resolution in prior works (see e.g. [Guendelman et al.
+6 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+2003]). Figure 5 illustrates the results one might typically expect
+with different numbers of iterations.
+
+5 POSITION UPDATE
+
+In contrast to the tension and impulse computations discussed in
+
+Section 4 which address force and velocity constraints respectively,
+
+a stricter approach is desirable for position constraints (especially
+
+to avoid errors in the rendered visualizations); thus, we execute one
+
+sweep from root to tip on the length of each rope in order to prevent
+
+it from exceeding its maximum length. Each virtual bone is updated
+from its time  position to its time +1 position by considering
+
+both  its  time      +  1  velocity  (computed     as  described  in    Section  4)  and
+                        2
+                                                                                           Fig. 6. For the sake of computational efficiency, we represent the volumetric
+the rope constraint on its position relative to the previously updated                     body (left) with a number of analytically defined SDFs (right). Although
+                                                              ì                    ì+1     other representations (three dimensional grid discretizations, neural rep-
+virtual  bone    (in  the  root  to  tip  sweep).  That  is,     is  updated   to          resentations, etc.) are compatible with our approach, they incur higher
+                                                                                           computational costs.
+
+                            + 12
+by considering both ì and the rope that connects the virtual
+           ì+1.
+bone  to
+             -1
+
+When the rope is slack, the virtual bone's position can evolve                                                     ì  
+
+freely with no hindrance from the constraint; however, when the                             +1              ^       
+                                                                                           ì - ì-1 and  = ì , the tangential velocity
+rope is taut, the virtual bone is constrained to rotate on the sphere                                              | |
+
+about  ì+1.     Approximating        this  with     an  evolve-and-project         strat-                        + 12    + 12 ^ ^
+                                                                                                 ì = ì - (ì ·  )                                           (12)
+         -1
+
+egy damps the rotation to the linearized rotation. This can be
+
+seen by projecting the distance moved in a linearized rotation                             is used to determine the distance  = |ì |( -  ) the virtual
+
+(colored blue in the figure) back onto                                                     bone rotates on the great circle specified by the direction ^ = |ìì | .
+
+a great circle and noting that the arc                                                     A rotation matrix  is defined to rotate the virtual bone by an amount
+
+length thus traversed (colored red in the                                                   =  about the axis ^ = ^ × ^ via
+
+figure) is smaller than the distance cov-                                                   ,                          
+
+ered in the linearized rotation, which                                                                           ì+1 =  (, ^ )ì                            (13)
+
+is the arc length distance that should
+
+have been traversed (the sum of red and                                                    to obtain ì+1 = ì+1 + ì+1.
+                                                                                                            -1 
+
+green colored arcs in the figure). Thus,                                                   After the position update, the velocities may no longer satisfy the
+
+we address the constrained motion with                                                     constraint preventing overstretching (see Equation 7). Thus, new
+
+a non-linearized (actual) rotation.                                                        impulses can be computed and applied (following the discussion in
+
+The tautness of the rope is governed by the quadratic function                             the second half of Section 4). Alternatively, impulses can instead
+
+                                  + 12 +1 2 2                                              be computed and applied after resolving collisions, both after the
+                       () = |ì + ì - ì-1 | - ,
+                                                                                     (10)  position update and after resolving collisions, or deferred entirely
+
+where  () < 0 indicates slack and  () > 0 indicates overstretching.                        (and left unmodified until the end of second velocity update).
+
+When  ()  0, the rope is not overstretched at the end of the                               6 COLLISIONS
+
+                      +1                  + 12                                             Generally speaking, we follow the method in [Bridson et al. 2003]
+time step and ì = ì + ì is accepted as the final position.                                 detecting and processing collisions between each non-kinematic
+                                                                                           virtual bone and each signed distance function (SDF). Although this
+Otherwise, when  () > 0, we compute the largest root  in                                   approach has quite efficient  (1) processing time for each virtual
+                                                                                           bone, it is computationally expensive to load three dimensional
+the interval [0, ]. If there is no root in the interval, then we set                       SDF discretizations into memory; in addition, the limited memory
+                                                    ì                                      availability in most real-time systems makes it infeasible to store
+      =    0  and  project  the  overstretched           back  onto     the  surface  of   the SDFs persistently. Thus, we avoid these costly three dimensional
+                                                                                           discretizations by utilizing SDFs that can be defined analytically (see
+                                                                                           e.g. [Blinn 1982; Nishimura et al. 1985; Wyvill et al. 1986]). See Figure
+the sphere via                                                                             6. Alternatively, a number of authors have aimed to represent SDFs
+                                                                                           via neural networks (see e.g. [Park et al. 2019; Remelli et al. 2020]).
+                                            ì - ì+1                                        If the number of parameters in the neural network can be made to
+                           ì  ì-+11 +  -1  |ì - ì+1 | , (11)                               be much smaller than an equivalently accurate three dimensional
+                                                                                           discretization, then the computational costs associated with high
+                                                    -1                                     demands on memory could be avoided. Instead of aiming to make
+                                                                                           each neural SDF utilize less memory than its equivalently accurate
+so that it is no longer overstretched. In the interval [0,  ], the
+
+virtual bone is allowed to move unhindered by the constraint via
+
+                           + 12
+ì = ì +  ì . Note that this intentionally ignores any
+
+overstretching in [0,  ], since such overstretching is overcome
+
+automatically and may only be the (spurious) result of updating
+
+the virtual bones one at a time (from root to tip) as opposed to
+
+uniformly.
+
+In the interval [ , ], the virtual bone is constrained to ro-
+                                                                               ì
+tate  on   the  sphere     centered  at   ì+1   of  radius    ,      .  Given         =
+                                                                                
+                                            -1
+                                                                                            A Neural-Network-Based Approach for Loose-Fitting Clothing · 7
+
+three dimensional discretization, one could aim to minimize the           to pushing the particle outwards to the  =  isocontour. Finally,
+
+additional memory burden incurred by switching from one neural            note that one could use line search (perhaps via bisection), which is
+
+SDF to another (e.g. by using shape descriptors).                         equivalent to CCD for the simple case when the collision body is
+
+Motivated by the cloth-object collision discussion in [Selle et al.       stationary (CCD is typically much cheaper in this simple case).
+                                                                             When the collision body is moving, ì is not necessarily non-
+2008], we propose a modification to [Bridson et al. 2003] in order to
+
+obtain more robust behavior for real-time applications with coarse        interpenetrating (since the collision body may move to cover it);
+
+discretizations and large time steps. In the standard approach, an        in such a scenario, ^ is no longer guaranteed to be a suitable re-
+
+initially non-interpenetrating particle that ends up in the interior of   placement for . Fortunately, this is easily remedied by analyzing
+
+an SDF is pushed outwards in the  direction until it reaches the          the problem in the moving frame of the collision body. As the col-
+                                                                          lision body moves and deforms from time  to +1, we embed
+surface of the SDF (or a bit further than the surface when aiming
+
+for wrinkle preservation as discussed in [Bridson et al. 2003]). In       the particle to move with it. This guarantees that the new particle
+                                                                                                   ì
+contrast, a real-world particle is unable to penetrate into the interior  location,     denoted           ,  is  non-interpenetrating.          For    example,     when
+                                                                                                    
+
+of an object and instead collides with the surface and responds ac-       the collision body moves rigidly, that same rigid motion is applied
+                                                                              ì                 ì .
+cordingly. In the limit as the time step goes to zero and the number      to        to  obtain         For   deforming          and/or    skinned      collision    bodies,
+                                                                                                 
+                                                                          the deformation/skinning needs to be extended to ì in order to
+of points used to represent the surface goes to infinity, the standard
+
+numerical approach converges to the correct real-world solution           obtain    ì .  This   allows       ì   =  ì  -   ì+1  to   be     used   as  a  valid  push     out
+
+                                                                                                                     
+
+(roughly speaking, ignoring the inability to properly model friction,     direction.
+                                                                             After the position ì+1 is modified to be collision-free, the velocity
+microscopic structure, etc.). However, the numerical errors are exac-
+
+erbated by the large time steps and the coarse surface discretizations    ì   +  1  is  modified   to  ensure       that   the  relative    normal     velocity  (  ì  +  1  -
+                                                                                 2                                                                                        2
+
+utilized for real-time applications. Although continuous collision        ì ) · ^ does not point into the SDF via
+
+detection (CCD) could be used to increase the accuracy while main-                                   = max(ì+ 21 · ^ , ì · ^ )
+
+taining a large time step, CCD is too computationally burdensome                                                                                                       (14)
+
+for most real-time applications (although progress is being made,         where ì is the velocity of the (extended, if necessary) collision
+                                                                          body at ì+1, and ^ may be chosen as either  or ^. The relative
+see e.g. [Li et al. 2020] and the references therein).
+                                                                          tangential velocity
+The standard approach of evolving a particle into an interpenetrat-
+
+ing state and subsequently pushing it outwards in the  direction
+
+can be thought of as a predictor-corrector method modeling the                                     ì  ,              + 12      + 12  · ^    - ì,                       (15)
+
+                                                                                                                 = ì       - ì
+
+actual path of the particle (the path that CCD would aim to trace         is defined using the tangential velocity ì, = ì - ì · ^ of the
+
+out). Aiming to preserve the computational efficiency of the pre-         (extended, if necessary) collision body at ì+1. When the friction
+
+dictor, we propose modifying the corrector in order to obtain a           coefficient  is non-zero, the relative tangential velocity is modified
+
+more accurate final state. This can be done efficiently by choosing a
+
+more appropriate direction for push out than . In fact,  can              via
+
+be highly erroneous when objects are thin (causing a particle to                                                                         -  ì+  1  · ^
+                                                                                        ì                                                       2
+
+be pushed to the wrong side) or have high curvature (causing a                              =   ì,        +  max(0, 1      -             |ì, |            )ì, (16)
+
+particle to be pushed to the wrong direction); moreover, these errors
+
+are exacerbated by the larger time steps typically used in real-time      as suggested by [Bridson et al. 2002]. The final post collision velocity
+
+applications. Given limited information, our ansatz is that the safest    is  given     by   ^         +  ì .       See    Figure    7.
+
+                                                                                                           
+
+push out direction is the reverse direction along the path the particle       The collisions are processed sequentially from root to tip. Since
+
+traversed as it penetrated into the collision body. At the very least,    collisions alter the positions of the virtual bones, length constraints
+
+this aims to return the particle to the point where a CCD collision       are enforced in this step as well. This is accomplished by adjusting
+
+would have occurred.                                                      the    position   of  a  virtual       bone  via    ì      =    ì -1  + ,^      whenever
+
+                                                                                                                               
+
+Assuming the collision body is stationary, the reverse path out            > , . Of course, this can create new collisions, so back-and-
+
+of the collision body back towards the CCD collision point has            forth iteration is desirable. The root to tip sweep is done only once,
+direction ì = ì - ì+1 where ì+1 is the predicted position of the
+                                                                          and any back-and-forth iteration between the collision and the
+
+particle (penetrating into the collision body). The main difficulty       length constraint happens only once for each virtual bone. We
+
+associated with using this direction is that it is unclear how far        recommend starting this iteration with the length constraint, since it
+
+the particle should move. There are several options for addressing        may remove the need for collisions. We also stress the importance of
+
+this. One could use the local value of | | as usual, but this does not    finishing this iteration with the collision check in order to preserve
+
+necessarily alleviate interpenetration when ^  =   ì    and   point       a non-interpenetrating state.
+                                                   |ì|
+
+in different directions. Notably, the local value of | | is always too    7 NEURAL SKINNING
+
+small, except when ^ =  in which case the particle should exactly         After each frame of rope chain simulation, a full cloth mesh needs to
+                                                                          be reconstructed for rendering. After extensive experimentation, we
+reach the surface of the collision body. Therefore, one could iterate     were not able to obtain reasonable results via any of the standard
+                                                                          skinning methods (such as LBS [Magnenat et al. 1988] or Dual
+the push out a few times in order to better approach the surface. In      Quaternion Skinning [Kavan et al. 2007]). We were also unable to
+
+addition, one could use a small  > 0 to augment the local value of
+
+| |. This is roughly equivalent to using an SDF thickened by  or
+8 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+Fig. 7. Time evolution of a sphere colliding with six particles (6 frames are depicted). The red particles use the  direction for both push out and velocity
+projection (as is typical), the purple particles use ^ for push out and  for velocity projection, and the green particles use ^ for both push out and velocity
+projection. Note how replacing  with ^ prevents the particles from quickly working their way around the sphere. In fact, the green particles maintain a
+persistent contact with the sphere until it stops moving shortly before the last frame (even though friction is not used in this example). The behavior of the
+green particles is highly preferable to that of the red (and purple) particles when considering collisions between clothing and the human body.
+
+remedy these issues with a corrective quasistatic neural network        mesh that is compared to the simulation ground truth vertex-by-
+(see Section 8). The difficulties are likely due to the rope chain      vertex via a standard L2 norm. Importantly, each frame is treated
+simulation's inability to produce good rotational information for       as non-sequential in order to reduce the need for a higher capacity
+the virtual bones, even with various procedural modifications. Thus,    neural network, minimize the burden associated with collecting
+we took an alternative approach that utilizes a neural network to       more training data, and avoid unnecessary overfitting. We did not
+infer PCA coefficients for the cloth mesh from the virtual bone         find the need to add any additional terms (such as Laplacians) that
+translational degrees of freedom (only). This resulted in a mesh        would regularize the cloth mesh, since the use of a PCA model
+suitable enough for a corrective QNN to operate on (see Section 8).     already provides sufficient regularization.
+
+   For each cloth mesh under consideration, we utilize on the order        Even when the ground truth cloth meshes used in training do not
+of 5000 frames of simulated data (any offline simulation system will    interpenetrate the body, the inferred results will typically contain in-
+do) in order to construct a standard PCA model based on non-rigid       terpenetrations. This is caused by the regularization used to combat
+displacements from the cloth rest state. The rest state of the cloth    overfitting and to increase the efficacy of generalization to unseen
+mesh is defined by its steady-state draped position in the rest pose    data. In order to alleviate interpenetration without adversely affect-
+of the body. Given an animated body pose, the rigid component of        ing desirable regularization, we include a PINN-style collision loss
+the cloth displacement is calculated as the rigid displacement of a     during training. When a cloth vertex is found to be interpenetrating,
+key body part (the neck for the cape and the pelvis for the skirt) and  we calculate a suitable non-interpenetrating position for that vertex
+removed from the cloth displacement in order to obtain its non-rigid    (using push out) and include the difference between the vertex and
+displacement. About 100 PCA basis functions are retained for neural     its non-interpenetrating state in the PINN-style collision loss. The
+skinning. When the cloth meshes were converted to rope chains           non-interpenetrating state can be calculated using  as the push
+(see Figure 2), not all virtual bones were simulated (see the non-      out direction along with the  value (with or without iteration) or
+interconnected virtual bones in Figure 2); however, these virtual       CCD to calculate the push out distance. Given the potentially large
+bones are needed in order to reconstruct the full cloth mesh and as     inaccuracy of the cloth state during training,  often points in an
+such are also used as input into the neural skinning network. Given     unhelpful direction; thus, we instead chose an alternative push out
+non-rigid displacements of the virtual bones from their positions in    direction ^ pointing from the current position to the ground truth
+the cloth mesh rest state (their rigid component is identical to that   position. Note that it can be desirable for the non-interpenetrating
+used for the cloth mesh), the neural skinning network is trained to     state to be well-separated from the collision body (not just on the
+infer the approximately 100 PCA coefficients used to reconstruct        zero-isocontour) in order to create a buffer on the vertices that helps
+the full cloth mesh.                                                    to alleviate edge interpenetrations (and/or to preserve wrinkling, see
+                                                                        e.g. [Bridson et al. 2003]). Since we detach the non-interpenetrating
+   We utilize a lightweight 2-layer MLP with 500 neurons per layer.     state from the automatic differentiation graph, an interpenetrating
+In order to train the network, the same 5000 frames of simulation       vertex's contribution to the gradient from the PINN-style collision
+data (previously described) is used for supervision. The virtual bones  loss is parallel to its contribution from the data term. This can be
+are embedded in the cloth rest state and barycentrically enslaved to    interpreted as increasing the importance of matching the ground
+move with the simulation data yielding the inputs for the network.      truth for vertices that are interpenetrating as compared to vertices
+For each frame utilized in the data term of the loss function, the      that are non-interpenetrating; in fact, we use a weight of 1000 on
+network-inferred PCA coefficients are used to reconstruct a cloth
+Fig. 8. Top row: first five principle components of the neural skinning PCA                       A Neural-Network-Based Approach for Loose-Fitting Clothing · 9
+model for the cape. Bottom row: first five principle components of the neural
+shape PCA model for the cape. All of the images depict the augmentation        9 RESULTS AND DISCUSSION
+of the rest shape cloth mesh by the PCA displacements, even though the
+displacements are added to the skinned mesh (not the rest state mesh)          For both the neural skinning and the neural shape networks, we
+during neural shape inference. The PCA model used for skinning tends to        used a weight of 0.1 on the data term and weight of 1000 on the PINN-
+capture low-frequency deformations, while the PCA model used for shape         style collision loss. The initial learning rate for Adam [Kingma and
+inference is better suited for capturing higher-frequency deformations.        Ba 2014] was set to 10-4 to train the neural skinning network and
+                                                                               10-5 to train the neural shape network. A smaller learning rate was
+the PINN-style collision loss and a weight of only 0.1 for the data            specified for the neural shape network, since its PCA coefficients
+term.                                                                          represent smaller displacements. A cosine annealing schedule was
+                                                                               used to decay the learning rate over epochs. The collision body SDFs
+   It is important to note that there is a large discrepancy between           were expanded by a small amount, and only one iteration was used
+the virtual bone configurations that arise from rope chain simula-             for push out (for computational efficiency).
+tions and the configurations in the training data, which are obtained
+by barycentrically embedding virtual bones in a mass-spring cloth                 We obtained our 5000 frames of training data (for both the cape
+simulation mesh. That is, we are aiming to make the network gen-               and the skirt) using Houdini Vellum. 80 percent of the frames were
+eralize well to (sometimes significantly) out-of-distribution data.            used in the loss function to train the neural network, and 10 percent
+The usual process of utilizing holdout data does help to increase              of the frames (unseen in training) were used in a validation loss in
+the ability of a network to generalize to unseen data; however, the            order to choose parameters that might generalize well. Figures 9
+errors can still be quite large when the training data and holdout             and 10 demonstrate the efficacy of the neural skinning network and
+data come from one distribution and the unseen data comes from                 the neural shape network respectively. Another 10 percent of the
+another. This is more akin to a domain gap. Both the PINN collision            frames were kept as true holdout data, in order to predict the ability
+loss and the regularization obtained via the PCA model help to alle-           of the networks to generalize to unseen (but still in-distribution)
+viate these issues with out-of-distribution unseen data. Even though           data. See Figure 11. Finally, Figure 12 showcases the efficacy of the
+the network-inferenced cloth may not follow the dynamic trajectory             PINN-style collision loss.
+of the virtual bones as closely as one might prefer, the cloth tends to
+have an aesthetically pleasing shape and be interpenetration-free.                In order to demonstrate how our networks generalize to unseen
+                                                                               out-of distribution data from rope chain simulations, we considered
+8 NEURAL SHAPE INFERENCE                                                       two types of loose-fitting garments: capes and skirts. See Figures 15
+                                                                               and 16. Weak lateral springs were added in order to connect virtual
+Similar to the neural skinning in Section 7, we utilize a 2-layer MLP          bones from different rope chains (for both the skirt and the cape).
+with 500 neurons per layer in order to inference about 100 PCA                 Wind drag was added to the cape virtual bones. Damping, relative
+coefficients from the non-rigid displacements of the virtual bones             to the parent virtual bone in the chain, was added to the skirt virtual
+from their positions in the cloth rest state. The same 5000 frames             bones. The rope chains were collided against the analytic SDFs
+of simulated data is used for training; however, the PCA model is              depicted in Figure 6. Given the virtual bone positions obtained via
+calculated based on the non-rigid displacement between the output              rope chain simulation, we reconstructed the full cloth mesh using
+of the neural skinning network and the ground truth (see [Wang                 the neural skinning and neural shape networks. Even though the
+and Lai 2024] for interesting discussion on multi-stage approaches).           virtual bone positions generated from the rope chain simulations
+While the neural skinning is responsible for constructing a coarse             are out of distribution as compared to the training, validation, and
+approximation to the cloth mesh, the neural shape inference focuses            holdout data, Figures 15 and 16 demonstrate that the networks
+on capturing more of the high-frequency spatial detail. This is obvi-          generalized well and obtained good results.
+ous when comparing the two PCA models (See Figure 8). Similar to
+Section 7, a PINN-style collision loss is also included.                          Finally, we consider an RNN approach. Following the low fre-
+                                                                               quency module in [Pan et al. 2022], we trained a Gated Recurrent
+                                                                               Unit (GRU) [Cho et al. 2014]. The inputs are the current body pose
+                                                                               and the latent vector from the prior state, and the outputs are the
+                                                                               current virtual bone positions and the current latent vector. For the
+                                                                               sake of a fair comparison, we used the same 5000 frames of (cape)
+                                                                               simulation as training data; however, the RNN would obviously
+                                                                               benefit from having access to an increased amount of training data.
+                                                                               A separate RNN was trained for each rope chain. See Figures 13 and
+                                                                               14. Alternatively, the RNNs could be trained to match rope chain
+                                                                               simulations; however, there is no reason to believe that predict-
+                                                                               ing out-of-distribution data would fair any better than predicting
+                                                                               in-distribution data.
+
+                                                                               10 CONCLUSION AND FUTURE WORK
+
+                                                                               We presented a novel method for the real-time simulation of loose-
+                                                                               fitting garments leveraging neural networks for both skinning and
+                                                                               shape inference. We demonstrated that only a small number of
+10 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+Fig. 9. The first row shows the results of the neural skinning network, which    Fig. 11. The first row shows the results of the neural skinning network, and
+can be compared to the ground truth training data in the second row. In          the second row shows the results of the neural shape network applied on
+order to demonstrate that the network does have the ability to match the         top of the neural skinning result. These holdout frames from the training
+ground truth data, the third row shows the overfit results obtained via          set give some indication of how the network will perform on unseen data.
+overtraining; of course, an overfit network will not generalize well to unseen   Note that the network needs to generalize to out-of-distribution data (from
+data.                                                                            rope chain simulations, as is discussed in the last paragraph in Section 7),
+                                                                                 not just to holdout frames from the training set.
+
+                                                                                 Fig. 12. Comparing the result of a neural skinning network trained without
+                                                                                 and with the PINN-style collision loss.
+
+Fig. 10. The first row shows the results of the neural skinning network          to add additional details. These networks were trained with the aid
+(identical to the first row in Figure 9). The second row shows the results       of a PINN-style collision loss.
+of the neural shape network applied on top of the neural skinning result.
+The third row shows the ground truth training data. The fourth row shows            Since they are based on the PCA coefficients, the neural skinning
+how overtraining the neural shape network leads to results that well match       and shape networks produce reasonable mesh output even with out-
+(albeit overfit, similar to the last row in Figure 9) the ground truth training  of-distribution input; however, out-of-distrubution input does ad-
+data.                                                                            versely affect their ability to maintain an interpenetration-free state.
+                                                                                 Training the networks with a PINN-style collision loss gives reason-
+degrees of freedom is necessary in order to capture the ballistic                ably penetration-free results for in-distribution data, but not neces-
+motions. In order to overcome the locking artifacts typically incurred           sarily for out-of-distribution data. Improving the interpenetration-
+by using only a small number of degrees of freedom, we proposed a                freeness for out-of-distribution input is perhaps the most important
+rope chain simulation method that maintains inextensibilily while                area for the future work. Although the mesh could be post-processed
+still allowing swinging, rotating, and buckling without resistance.              to be interpenetration-free, doing so significantly decreases perfor-
+A new history-based approach to collisions was introduced in order               mance and thus the applicability for real-time applications. It is
+to accommodate fast-moving collision bodies and large time steps.                relatively cheap to process collisions for a small number of virtual
+A neural skinning solution was utilized in order to create a cloth               bones, but far more expensive to process collisions for the entire
+mesh from the rope chain simulation degrees of freedom, and a                    mesh. Other interesting directions for future work include: making
+quasistatic neural shape network was subsequently used in order                  the rope chain simulation differentiable in order to automatically
+                                                                                 find constitutive parameters that best match the ground truth, in-
+                                                                                 vestigating different network architectures for the neural skinning,
+Fig. 13. We trained a separate RNN for each rope chain (10 RNNs in total).                         A Neural-Network-Based Approach for Loose-Fitting Clothing · 11
+The RNN results (first row) are quite noisy compared to the ground truth
+training data (second row). The thrid row shows the overfit results obtained     generalizing a single network so that it can be used across different
+via overtraining. The fourth row shows the result of applying our neural         garment types and/or body shapes, etc.
+skinning and neural shape inference to the RNN-inferred virtual bone po-
+sitions (from the first row). Comparing these results to the ground truth        ACKNOWLEDGMENTS
+training data (fifth row) illustrates that our networks generalize well to this
+noisy RNN input.                                                                 Research supported in part by ONR N00014-19-1-2285, ONR N00014-
+                                                                                 21-1-2771, Epic Games, and Sony. We would like to thank Reza and
+Fig. 14. The main issue with the RNN is that it generalizes very poorly to the   Behzad at ONR for supporting our efforts into machine learning.
+holdout data. Presumably, this issue could be fixed by collecting more and       We would also like to thank Michael Lentine for various insightful
+more training data, but that excessively increases the cost incurred in both     discussions.
+data collection (via numerical simulation) and training (via optimization).
+Even though our skinning and shape networks can smooth the noise in this         REFERENCES
+RNN output (as they did in Figure 13), the dynamics will still be completely
+wrong.                                                                           Dragomir Anguelov, Praveen Srinivasan, Daphne Koller, Sebastian Thrun, Jim Rodgers,
+                                                                                     and James Davis. 2005. Scape: shape completion and animation of people. In ACM
+                                                                                     SIGGRAPH 2005 Papers. 408-416.
+
+                                                                                 Stephen W Bailey, Dalton Omens, Paul Dilorenzo, and James F O'Brien. 2020. Fast and
+                                                                                     deep facial deformations. ACM Transactions on Graphics (TOG) 39, 4 (2020), 94-1.
+
+                                                                                 Stephen W Bailey, Dave Otte, Paul Dilorenzo, and James F O'Brien. 2018. Fast and deep
+                                                                                     deformation approximations. ACM Transactions on Graphics (TOG) 37, 4 (2018),
+                                                                                     1-12.
+
+                                                                                 David Baraff and Andrew Witkin. 1998. Large steps in cloth simulation. In Proceedings
+                                                                                     of the 25th annual conference on Computer graphics and interactive techniques. 43-54.
+
+                                                                                 Hugo Bertiche, Meysam Madadi, and Sergio Escalera. 2021a. PBNS: physically based
+                                                                                     neural simulation for unsupervised garment pose space deformation. ACM Trans.
+                                                                                     Graph. 40, 6 (2021), 198:1-198:14. https://doi.org/10.1145/3478513.3480479
+
+                                                                                 Hugo Bertiche, Meysam Madadi, Emilio Tylson, and Sergio Escalera. 2021b. DeePSD:
+                                                                                     Automatic deep skinning and pose space deformation for 3D garment animation. In
+                                                                                     Proceedings of the IEEE/CVF International Conference on Computer Vision. 5471-5480.
+
+                                                                                 James F Blinn. 1982. A generalization of algebraic surface drawing. ACM transactions
+                                                                                     on graphics (TOG) 1, 3 (1982), 235-256.
+
+                                                                                 Robert Bridson, Ronald Fedkiw, and John Anderson. 2002. Robust treatment of collisions,
+                                                                                     contact and friction for cloth animation. In Proceedings of the 29th annual conference
+                                                                                     on Computer graphics and interactive techniques. 594-603.
+
+                                                                                 Robert Bridson, Sebastian Marino, and Ronald Fedkiw. 2003. Simulation of Clothing
+                                                                                     with Folds and Wrinkles. In Proceedings of the 2003 ACM SIGGRAPH/Eurographics
+                                                                                     Symposium on Computer Animation (San Diego, California) (SCA '03). Eurographics
+                                                                                     Association, Goslar, DEU, 28-36.
+
+                                                                                 Nuttapong Chentanez, Miles Macklin, Matthias Müller, Stefan Jeschke, and Tae-Yong
+                                                                                     Kim. 2020. Cloth and skin deformation with a triangle mesh based convolutional
+                                                                                     neural network. In Computer Graphics Forum, Vol. 39. Wiley Online Library, 123-
+                                                                                     134.
+
+                                                                                 Kyunghyun Cho, Bart Van Merriënboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi
+                                                                                     Bougares, Holger Schwenk, and Yoshua Bengio. 2014. Learning phrase representa-
+                                                                                     tions using RNN encoder-decoder for statistical machine translation. arXiv preprint
+                                                                                     arXiv:1406.1078 (2014).
+
+                                                                                 Kwang-Jin Choi and Hyeong-Seok Ko. 2002. Stable but Responsive Cloth. ACM Trans.
+                                                                                     Graph. 21, 3 (July 2002), 604-611.
+
+                                                                                 Edilson De Aguiar, Leonid Sigal, Adrien Treuille, and Jessica K Hodgins. 2010. Stable
+                                                                                     spaces for real-time clothing. ACM Transactions on Graphics (ToG) 29, 4 (2010), 1-9.
+
+                                                                                 Junqi Diao, Jun Xiao, Yihong He, and Haiyong Jiang. 2023. Combating Spurious
+                                                                                     Correlations in Loose-fitting Garment Animation Through Joint-Specific Feature
+                                                                                     Learning. In Computer Graphics Forum, Vol. 42. Wiley Online Library, e14939.
+
+                                                                                 Lawson Fulton, Vismay Modi, David Duvenaud, David IW Levin, and Alec Jacobson.
+                                                                                     2019. Latent-space dynamics for reduced deformable simulation. In Computer
+                                                                                     graphics forum, Vol. 38. Wiley Online Library, 379-391.
+
+                                                                                 Naga K Govindaraju, David Knott, Nitin Jain, Ilknur Kabul, Rasmus Tamstorf, Russell
+                                                                                     Gayle, Ming C Lin, and Dinesh Manocha. 2005. Interactive collision detection
+                                                                                     between deformable models using chromatic decomposition. ACM Transactions on
+                                                                                     graphics (TOG) 24, 3 (2005), 991-999.
+
+                                                                                 Artur Grigorev, Michael J Black, and Otmar Hilliges. 2023. HOOD: Hierarchical Graphs
+                                                                                     for Generalized Modelling of Clothing Dynamics. In Proceedings of the IEEE/CVF
+                                                                                     Conference on Computer Vision and Pattern Recognition. 16965-16974.
+
+                                                                                 Peng Guan, Loretta Reiss, David A Hirshberg, Alexander Weiss, and Michael J Black.
+                                                                                     2012. Drape: Dressing any person. ACM Transactions on Graphics (ToG) 31, 4 (2012),
+                                                                                     1-10.
+
+                                                                                 Eran Guendelman, Robert Bridson, and Ronald Fedkiw. 2003. Nonconvex rigid bodies
+                                                                                     with stacking. ACM transactions on graphics (TOG) 22, 3 (2003), 871-878.
+
+                                                                                 Erhan Gundogdu, Victor Constantin, Amrollah Seifoddini, Minh Dang, Mathieu Salz-
+                                                                                     mann, and Pascal Fua. 2019. Garnet: A two-stream network for fast and accurate 3d
+                                                                                     cloth draping. In Proceedings of the IEEE/CVF International Conference on Computer
+                                                                                     Vision. 8739-8748.
+
+                                                                                 Fabian Hahn, Bernhard Thomaszewski, Stelian Coros, Robert W Sumner, Forrester Cole,
+                                                                                     Mark Meyer, Tony DeRose, and Markus Gross. 2014. Subspace clothing simulation
+12 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+Fig. 15. Simulation of a cape on an animation of a running person. First row: rope chain simulation. The rope chains are shaded green, and the weak lateral
+springs are visualized as purple edges. Second row: neural skinning, based on the first row. Third row: neural shape inference, based on the second row. Fourth
+row: Houdini cloth simulation with approximately 12K vertices (as a reference). The Houdini simulation and our rope chain approach both produce good
+dynamics, although the Houdini simulation does exhibit visually displeasing erroneous over-stretching artifacts; in addition, the Houdini simulation is an
+order of magnitude slower than our currently unoptimized code.
+
+    using adaptive bases. ACM Transactions on Graphics (TOG) 33, 4 (2014), 1-9.           Ladislav Kavan, Steven Collins, Jií Zára, and Carol O'Sullivan. 2007. Skinning with
+Daniel Holden, Bang Chi Duong, Sayantan Datta, and Derek Nowrouzezahrai. 2019.                dual quaternions. In Proceedings of the 2007 symposium on Interactive 3D graphics
+                                                                                              and games. 39-46.
+    Subspace neural physics: Fast data-driven interactive simulation. In Proceedings of
+    the 18th annual ACM SIGGRAPH/Eurographics Symposium on Computer Animation.            Ladislav Kavan, Steven Collins, Jií Zára, and Carol O'Sullivan. 2008. Geometric skinning
+   1-12.                                                                                     with approximate dual quaternion blending. ACM Transactions on Graphics (TOG)
+Ning Jin, Wenlong Lu, Zhenglin Geng, and Ronald P Fedkiw. 2017. Inequality cloth. In          27, 4 (2008), 1-23.
+    Proceedings of the ACM SIGGRAPH/Eurographics symposium on computer animation.
+   1-10.                                                                                  Ladislav Kavan, Dan Gerszewski, Adam W Bargteil, and Peter-Pike Sloan. 2011. Physics-
+Ning Jin, Yilin Zhu, Zhenglin Geng, and Ronald Fedkiw. 2020. A pixel-based framework          inspired upsampling for cloth simulation in games. In ACM SIGGRAPH 2011 papers.
+    for data-driven clothing. In Computer Graphics Forum, Vol. 39. Wiley Online Library,     1-10.
+   135-144.
+Yongxu Jin, Yushan Han, Zhenglin Geng, Joseph Teran, and Ronald Fedkiw. 2022.             Doyub Kim, Woojong Koh, Rahul Narain, Kayvon Fatahalian, Adrien Treuille, and
+   Analytically Integratable Zero-restlength Springs for Capturing Dynamic Modes             James F O'Brien. 2013. Near-exhaustive precomputation of secondary cloth effects.
+    unrepresented by Quasistatic Neural Networks. In ACM SIGGRAPH 2022 Conference             ACM Transactions on Graphics (TOG) 32, 4 (2013), 1-8.
+    Proceedings. 1-9.
+                                                                                          Diederik P Kingma and Jimmy Ba. 2014. Adam: A method for stochastic optimization.
+                                                                                              arXiv preprint arXiv:1412.6980 (2014).
+
+                                                                                          Tsuneya Kurihara and Natsuki Miyata. 2004. Modeling deformable human hands from
+                                                                                              medical images. In Proceedings of the 2004 ACM SIGGRAPH/Eurographics symposium
+                                                                                        A Neural-Network-Based Approach for Loose-Fitting Clothing · 13
+
+Fig. 16. Simulation of a skirt on an animation of a dancing person. First row: rope chain simulation. The rope chains are shaded green, and the weak lateral
+springs are visualized as purple edges. Second row: neural skinning, based on the first row. Third row: neural shape inference, based on the second row. Fourth
+row: Houdini cloth simulation with approximately 18K vertices (as a reference). The skirt is rendered with a blue color in order to differentiate it from the
+yellow skirt figures, which use barycentrically embedded virtual bone positions instead of rope chain simulations as the network input.
+
+    on Computer animation. 355-363.                                                     Christopher Lewin. 2021. Swish: Neural Network Cloth Simulation on Madden NFL 21.
+Zorah Lahner, Daniel Cremers, and Tony Tung. 2018. Deepwrinkles: Accurate and               In ACM SIGGRAPH 2021 Talks. 1-2.
+
+    realistic clothing modeling. In Proceedings of the European conference on computer  John P Lewis, Matt Cordner, and Nickso Fong. 2000. Pose space deformation: a unified
+    vision (ECCV). 667-684.                                                                 approach to shape interpolation and skeleton-driven deformation. In Proceedings
+Binh Huy Le and Zhigang Deng. 2012. Smooth skinning decomposition with rigid                of the 27th annual conference on Computer graphics and interactive techniques 2000.
+    bones. ACM Transactions on Graphics (TOG) 31, 6 (2012), 1-10.                          ACM Press/Addison-Wesley Publishing Co., 165-172.
+Dohae Lee, Hyun Kang, and In-Kwon Lee. 2023. ClothCombo: Modeling Inter-Cloth
+    Interaction for Draping Multi-Layered Clothes. ACM Transactions on Graphics (TOG)   Cheng Li, Min Tang, Ruofeng Tong, Ming Cai, Jieyi Zhao, and Dinesh Manocha. 2020.
+   42, 6 (2023), 1-13.                                                                      P-cloth: interactive complex cloth simulation on multi-GPU systems using dynamic
+                                                                                            matrix assembly and pipelined implicit integrators. ACM Transactions on Graphics
+                                                                                           (TOG) 39, 6 (2020), 1-15.
+14 · Yongxu Jin, Dalton Omens, Zhenglin Geng, Joseph Teran, Abishek Kumar, Kenji Tashiro, and Ronald Fedkiw
+
+Ren Li, Benoît Guillard, and Pascal Fua. 2024. Isp: Multi-layered garment draping with           Recognition (CVPR) (2022).
+    implicit sewing patterns. Advances in Neural Information Processing Systems 36           Igor Santesteban, Nils Thuerey, Miguel A Otaduy, and Dan Casas. 2021. Self-supervised
+   (2024).
+                                                                                                 collision handling via generative 3d garment models for virtual try-on. In Proceedings
+Yu Di Li, Min Tang, Xiao Rui Chen, Yun Yang, Ruo Feng Tong, Bai Lin An, Shuang Cai               of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 11763-11773.
+   Yang, Yao Li, and Qi Long Kou. 2023. D-Cloth: Skinning-based Cloth Dynamic                Andrew Selle, Jonathan Su, Geoffrey Irving, and Ronald Fedkiw. 2008. Robust high-
+    Prediction with a Three-stage Network. In Computer Graphics Forum, Vol. 42. Wiley            resolution cloth using parallelism, history-based collisions, and accurate friction.
+    Online Library, e14937.                                                                      IEEE transactions on visualization and computer graphics 15, 2 (2008), 339-350.
+                                                                                             Yidi Shao, Chen Change Loy, and Bo Dai. 2023. Towards Multi-Layered 3D Garments
+Yu Di Li, Min Tang, Yun Yang, Zi Huang, Ruo Feng Tong, Shuang Cai Yang, Yao Li, and             Animation. In Proceedings of the IEEE/CVF International Conference on Computer
+    Dinesh Manocha. 2022. N-Cloth: Predicting 3D Cloth Deformation with Mesh-Based               Vision. 14361-14370.
+    Networks. In Computer Graphics Forum, Vol. 41. Wiley Online Library, 547-558.            Tianchang Shen, Jun Gao, Kangxue Yin, Ming-Yu Liu, and Sanja Fidler. 2021. Deep
+                                                                                                 marching tetrahedra: a hybrid representation for high-resolution 3d shape synthesis.
+Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J.                  Advances in Neural Information Processing Systems 34 (2021), 6087-6101.
+    Black. 2015. SMPL: a skinned multi-person linear model. ACM Trans. Graph. 34, 6,         Avneesh Sud, Naga Govindaraju, Russell Gayle, Ilknur Kabul, and Dinesh Manocha.
+   Article 248 (oct 2015), 16 pages. https://doi.org/10.1145/2816795.2818013                     2006. Fast proximity computation among deformable models using discrete voronoi
+                                                                                                 diagrams. In ACM SIGGRAPH 2006 Papers. 1144-1153.
+Ran Luo, Tianjia Shao, Huamin Wang, Weiwei Xu, Xiang Chen, Kun Zhou, and Yin Yang.           Qingyang Tan, Zherong Pan, Lin Gao, and Dinesh Manocha. 2020. Realtime simulation
+    2018. NNWarp: Neural network-based nonlinear deformation. IEEE transactions on               of thin-shell deformable materials using CNN-based mesh embedding. IEEE Robotics
+    visualization and computer graphics 26, 4 (2018), 1745-1759.                                 and Automation Letters 5, 2 (2020), 2325-2332.
+                                                                                             Qingyang Tan, Yi Zhou, Tuanfeng Wang, Duygu Ceylan, Xin Sun, and Dinesh Manocha.
+Thalmann Magnenat, Richard Laperrière, and Daniel Thalmann. 1988. Joint-dependent                2022. A Repulsive Force Unit for Garment Collision Handling in Neural Networks.
+    local deformations for hand animation and object grasping. Technical Report. Cana-           In European Conference on Computer Vision. Springer, 451-467.
+    dian Inf. Process. Soc.                                                                  Min Tang, Ruofeng Tong, Zhendong Wang, and Dinesh Manocha. 2014. Fast and exact
+                                                                                                 continuous collision detection with bernstein sign classification. ACM Transactions
+Ishit Mehta, Manmohan Chandraker, and Ravi Ramamoorthi. 2022. A level set theory for             on Graphics (TOG) 33, 6 (2014), 1-8.
+    neural implicit evolution under explicit flows. In European Conference on Computer       Min Tang, Tongtong Wang, Zhongyuan Liu, Ruofeng Tong, and Dinesh Manocha. 2018.
+    Vision. Springer, 711-729.                                                                   I-Cloth: Incremental collision handling for GPU-based interactive cloth simulation.
+                                                                                                 ACM Transactions on Graphics (TOG) 37, 6 (2018), 1-10.
+Matthias Müller, Bruno Heidelberger, Marcus Hennix, and John Ratcliff. 2007. Position        Demetri Terzopoulos, John Platt, Alan Barr, and Kurt Fleischer. 1987. Elastically de-
+    based dynamics. Journal of Visual Communication and Image Representation 18, 2               formable models. In Proceedings of the 14th annual conference on Computer graphics
+   (2007), 109-118.                                                                              and interactive techniques. 205-214.
+                                                                                             Huamin Wang, Florian Hecht, Ravi Ramamoorthi, and James F O'Brien. 2010. Example-
+Hitoshi Nishimura, Makoto Hirai, Toshiyuki Kawai, Toru Kawata, Isao Shirakawa, and               based wrinkle synthesis for clothing animation. In ACM SIGGRAPH 2010 papers.
+    Koichi Omura. 1985. Object modeling by distribution function and a method of                1-8.
+    image generation. Journal of papers IEICE Japan'85 68, 4 (1985).                         Tuanfeng Y Wang, Tianjia Shao, Kai Fu, and Niloy J Mitra. 2019. Learning an intrinsic
+                                                                                                 garment space for interactive authoring of garment animation. ACM Transactions
+Young Jin Oh, Tae Min Lee, and In-Kwon Lee. 2018. Hierarchical cloth simulation                  on Graphics (TOG) 38, 6 (2019), 1-12.
+    using deep neural networks. In Proceedings of Computer Graphics International 2018.      Yongji Wang and Ching-Yao Lai. 2024. Multi-stage neural networks: Function approxi-
+   139-146.                                                                                      mator of machine precision. J. Comput. Phys. (2024), 112865.
+                                                                                             Jane Wu, Diego Thomas, and Ronald Fedkiw. 2023. Weakly-Supervised 3D Recon-
+Xiaoyu Pan, Jiaming Mai, Xinwei Jiang, Dongxue Tang, Jingxiang Li, Tianjia Shao,                 struction of Clothed Humans via Normal Maps. arXiv preprint arXiv:2311.16042
+    Kun Zhou, Xiaogang Jin, and Dinesh Manocha. 2022. Predicting loose-fitting gar-             (2023).
+    ment deformations using bone-driven motion networks. In ACM SIGGRAPH 2022                Geoff Wyvill, Craig McPheeters, and Brian Wyvill. 1986. Soft objects. In Advanced
+    Conference Proceedings. 1-10.                                                                Computer Graphics: Proceedings of Computer Graphics Tokyo'86. Springer, 113-128.
+                                                                                             Weiwei Xu, Nobuyuki Umetani, Qianwen Chao, Jie Mao, Xiaogang Jin, and Xin Tong.
+Jeong Joon Park, Peter Florence, Julian Straub, Richard Newcombe, and Steven Love-               2014. Sensitivity-optimized rigging for example-based real-time clothing synthesis.
+    grove. 2019. Deepsdf: Learning continuous signed distance functions for shape                ACM Trans. Graph. 33, 4 (2014), 107-1.
+    representation. In Proceedings of the IEEE/CVF conference on computer vision and         Meng Zhang, Tuanfeng Y Wang, Duygu Ceylan, and Niloy J Mitra. 2021. Dynamic
+    pattern recognition. 165-174.                                                                neural garments. ACM Transactions on Graphics (TOG) 40, 6 (2021), 1-15.
+                                                                                             Fang Zhao, Zekun Li, Shaoli Huang, Junwu Weng, Tianfei Zhou, Guo-Sen Xie, Jue
+Chaitanya Patel, Zhouyingcheng Liao, and Gerard Pons-Moll. 2020. Tailornet: Predicting          Wang, and Ying Shan. 2023. Learning Anchor Transformations for 3D Garment
+    clothing in 3d as a function of human pose, shape and garment style. In Proceedings         Animation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+    of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 7365-7375.            Recognition. 491-500.
+                                                                                             Mianlun Zheng, Yi Zhou, Duygu Ceylan, and Jernej Barbic. 2021. A deep emulator for
+Tobias Pfaff, Meire Fortunato, Alvaro Sanchez-Gonzalez, and Peter W. Battaglia. 2021.            secondary motion of 3d characters. In Proceedings of the IEEE/CVF Conference on
+    Learning Mesh-Based Simulation with Graph Networks. In 9th International Confer-             Computer Vision and Pattern Recognition. 5932-5940.
+    ence on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021.
+
+Gerard Pons-Moll, Javier Romero, Naureen Mahmood, and Michael J Black. 2015. Dyna:
+   A model of dynamic human shape in motion. ACM Transactions on Graphics (TOG)
+    34, 4 (2015), 1-14.
+
+Xavier Provot. 1997. Collision and self-collision handling in cloth model dedicated
+    to design garments. In Computer Animation and Simulation'97: Proceedings of the
+    Eurographics Workshop in Budapest, Hungary, September 2-3, 1997. Springer, 177-
+   189.
+
+Maziar Raissi, Paris Perdikaris, and George E Karniadakis. 2019. Physics-informed neu-
+    ral networks: A deep learning framework for solving forward and inverse problems
+    involving nonlinear partial differential equations. Journal of Computational physics
+    378 (2019), 686-707.
+
+Edoardo Remelli, Artem Lukoianov, Stephan Richter, Benoit Guillard, Timur Bagaut-
+    dinov, Pierre Baque, and Pascal Fua. 2020. Meshsdf: Differentiable iso-surface
+    extraction. Advances in Neural Information Processing Systems 33 (2020), 22468-
+    22478.
+
+Nadine Abu Rumman and Marco Fratarcangeli. 2017. Skin Deformation Methods
+    for Interactive Character Animation. In Computer Vision, Imaging and Computer
+    Graphics Theory and Applications: 11th International Joint Conference, VISIGRAPP
+    2016, Rome, Italy, February 27-29, 2016, Revised Selected Papers 11. Springer, 153-174.
+
+Shunsuke Saito, Zeng Huang, Ryota Natsume, Shigeo Morishima, Angjoo Kanazawa,
+    and Hao Li. 2019. Pifu: Pixel-aligned implicit function for high-resolution clothed hu-
+    man digitization. In Proceedings of the IEEE/CVF international conference on computer
+    vision. 2304-2314.
+
+Alvaro Sanchez-Gonzalez, Jonathan Godwin, Tobias Pfaff, Rex Ying, Jure Leskovec, and
+    Peter Battaglia. 2020. Learning to simulate complex physics with graph networks.
+    In International conference on machine learning. PMLR, 8459-8468.
+
+Igor Santesteban, Miguel A Otaduy, and Dan Casas. 2019. Learning-based animation
+    of clothing for virtual try-on. In Computer Graphics Forum, Vol. 38. Wiley Online
+    Library, 355-366.
+
+Igor Santesteban, Miguel A Otaduy, and Dan Casas. 2022. SNUG: Self-Supervised
+    Neural Dynamic Garments. IEEE/CVF Conference on Computer Vision and Pattern
+

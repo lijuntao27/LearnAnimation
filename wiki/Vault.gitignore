@@ -1,0 +1,5 @@
+# Obsidian 应用配置（机器相关，不入版本管理）
+.obsidian/
+
+# Obsidian 回收站
+.trash/
