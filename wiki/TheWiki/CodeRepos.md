@@ -2,9 +2,9 @@
 type: entity
 title: 本地代码仓库索引（LearnAnimation 外部工程）
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-07
 tags: [index, code, local-repo, tooling]
-summary: H:\Animation 下 4 个论文配套代码仓库 + 个人工程 SkirtQNN 的 upstream/本地路径/关联论文清单；均各自独立 git 管理，不纳入 LearnAnimation 版本控制。
+summary: H:\Animation 下 4 个论文配套代码仓库 + 2 个个人工程（SkirtQNN、NeuralNetworksAndDeepLearning）的 upstream/本地路径/关联论文清单；均各自独立 git 管理，不纳入 LearnAnimation 版本控制。
 ---
 
 # 本地代码仓库索引
@@ -27,5 +27,6 @@ summary: H:\Animation 下 4 个论文配套代码仓库 + 个人工程 SkirtQNN 
 | 本地目录 | 仓库 | 本地 HEAD（2026-09-03） | 关联 wiki | 说明 |
 |---|---|---|---|---|
 | `SkirtQNN/` | 独立 git（`git init`，无 remote） | `01aa3be` (main) | [[Jin2024-RopeChainQNN]] · [[QNN]] | 裙摆 QNN 运行时工程：从动画工程采集 身体→裙摆骨骼 姿势对 → 训练 QNN 预测裙骨 6D 变换 → 导出 ONNX/ORT → 写入引擎裙骨节点（onnxruntime 推理）。`venv*`、`extract/raw*` 捕获数据、`*.npz` 数据集不入库（见 `SkirtQNN/.gitignore`）。若后续需要可单独推送到 GitHub |
+| `NeuralNetworksAndDeepLearning/` | 独立 git（`git init`，无 remote） | `1ea5d1c` (main) | 书 RawSource：[[RawSource/articles/NeuralNetworksAndDeepLearning-Nielsen-2015/ch01-handwritten-digits\|Nielsen《NN & DL》]]（6 章 md）· [[NeuralNetworkBasics]] · [[Backpropagation]] | 逐章精读 Nielsen《Neural Networks and Deep Learning》的 py3 移植配套代码：仿官方仓库 `src/` 平铺（`network.py`/`mnist_loader.py`…），仅机械迁移 py2→py3 保持与书对应；`data/mnist.pkl.gz` 不入库（gitignore）。无 upstream，本地独立 git |
 
-> 更新时间 2026-09-03。HEAD 为记录当日的本地提交；上游仓库如有更新以 `git fetch` 为准。
+> 更新时间 2026-09-07。HEAD 为记录当日的本地提交；上游仓库如有更新以 `git fetch` 为准。
