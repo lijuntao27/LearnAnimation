@@ -1,0 +1,847 @@
+
+===== PAGE 1 =====
+Workshop on Virtual Reality Interaction and Physical Simulation VRIPHYS (2008)
+F. Faure, M. Teschner (Editors)
+Hierarchical Position Based Dynamics
+Matthias Müller
+NVIDIA
+Abstract
+The Position Based Dynamics approach (PBD) recently introduced allows robust simulations of dynamic systems
+in real time. The simplicity of the method is due to the fact, that the solver processes the constraints one by one
+in a Gauss-Seidel type manner. In contrast to global Newton-Raphson solvers, the local solver can easily handle
+non-linear constraints as well as constraints based on inequalities. Unfortunately, this advantage comes at the
+price of much slower convergence.
+In this paper we propose a multi-grid based process to speed up the convergence of PBD signiﬁcantly while
+keeping the power of the method to process general non-linear constraints. Several examples show that the new
+approach is signiﬁcantly faster than the original one. This makes real time simulation possible at a higher level of
+detail in interactive applications such as computer games.
+Categories and Subject Descriptors (according to ACM CCS): I.3.5 [Computer Graphics]: Computational Geometry
+and Object ModelingPhysically Based Modeling; I.3.7 [Computer Graphics]: Three-Dimensional Graphics and
+RealismAnimation and Virtual Reality
+1. Introduction
+Simulation methods need to meet four major requirements
+to be applicable in computer games. They must be fast, sta-
+ble, controllable and easy to code in order for game de-
+velopers to pick them up and use them in their projects.
+There is still a signiﬁcant gap between the academic research
+community and game developers today. This gap seems to
+get even wider because simulation techniques in computer
+graphics get more and more mathematically involved as they
+get closer to methods used in computational sciences. This
+increase in complexity is necessary to achieve all the aston-
+ishing effects we see in movies today.
+In contrast, a majority of the physics in computer games
+is still rigid body dynamics. Other effects like water, cloth
+or soft bodies are mainly done with procedural approaches
+because procedural methods are computationally cheap and
+cannot get unstable. The Position Based Dynamics approach
+recently introduced by [MHR06] is an attempt to bridge
+this gap. It generalizes and extends the method proposed
+by [Jak01]. A Verlet-based integrator is used which bypasses
+the force and velocity layers and directly modiﬁes the posi-
+tions of particles or vertices of a mesh. These modiﬁcations
+are computed using a non-linear Gauss-Seidel type solver.
+The main advantages of the approach are its simplicity, un-
+conditional stability, its ability to handle non-linear unilat-
+eral (inequality) and bilateral (equality) constraints directly
+and the possibility of manipulating positions which gives the
+user a high level of control over the simulation process.
+Unfortunately, Gauss-Seidel type solvers have one signiﬁ-
+cant drawback. Because they handle constraints individually
+one by one, information propagates slowly through a mesh.
+The slow convergence lets cloth or soft bodies look stretchy,
+especially when high resolution meshes are used. This is def-
+initely an undesirable effect which produces visual artifacts
+because in the real world the high deformability of cloth is
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 2 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+not an effect of a low stretching stiffness but is due to its low
+bending resistance.
+Convergence can be signiﬁcantly increased by using
+global solvers. The most popular method for solving non-
+linear systems of equations is Newton-Raphson iteration.
+This approach is both computationally expensive and com-
+plex to code because the system of equations has to be
+linearized and solved multiple times per simulation time
+step. While not practical for real-time application, it can
+handle stiff equations effectively in off line applications as
+[GHF∗07] show. In order for the method to be global, each
+linear system has be be solved using a global linear solver
+like Preconditioned Conjugate Gradients (PCG). There is no
+easy way of extending PCG to handle unilateral constraints
+because they turn the system into a quadratic programming
+or linear complementarity problem [Ebe04]. Multigrid meth-
+ods are an important alternative to (PCG). They are designed
+for linear system as well and cannot handle inequalities ei-
+ther because it is not clear how to propagate these to higher
+hierarchy levels.
+One nice feature of the Multigrid approach is the fact that
+each level is typically solved by a simple Jacobi or Gauss-
+Seidel iteration. The core idea of our new approach is to
+use this fact and replace the linear Gauss-Seidel solver by
+the non-linear variant used in PBD which results in a non-
+linear Multigrid solver. There are several questions arising
+with this approach that we answer in this paper: How to re-
+strict unilateral constraints to coarser meshes, how to trans-
+late non-linear constraint functions to coarser levels or how
+to prolongate the solutions back to ﬁner levels. Thus, our
+main contribution is a method to turn the non-linear Gauss-
+Seidel Solver of (PBD) into a non-linear Multigrid based al-
+gorithm thereby signiﬁcantly increasing the speed of con-
+vergence of the PBD approach while keeping all its nice fea-
+tures.
+2. Related Work
+In this paper we focus on the simulation of deformable ob-
+jects. The state of the art reports [GM97] and [NMK∗05]
+give a comprehensive overview of methods used in this ﬁeld
+of research.
+Since the early work of [TPBF87] in the 80’s, many tech-
+niques have been proposed to simulate deformable solids
+and cloth. While early simulations were done as ofﬂine com-
+putations, the computing power available today allows for
+real-time simulation of such effects. One of the ﬁrst sys-
+tems that made real-time interaction with deformable objects
+possible was ArtDefo described in [JP99]. An effective way
+to speed up the simulation of deformable objects is to use
+reduced models such as in [HSO03] and [BJ07]. [MG04]
+worked with all the degrees of freedom but reduced the non-
+linear governing equations to a linear system while prevent-
+ing artifacts from large rotational deformations. Our method
+also targets real-time simulation although there is nothing
+that prevents it from being used in hight quality off-line set-
+tings with higher resolution models.
+As an extension of the PBD approach described in [Jak01]
+and generalized in [MHR06] our method is based on con-
+straint projection. This idea has been used in cloth simu-
+lation by [BFA02] to resolve collisions geometrically and
+by [VCMT95] in their kinematic collision correction step.
+Desbrun [DSB99], Provot [Pro95] and [GHF∗07] used con-
+straint projection in mass spring systems to prevent springs
+from overstretching. For the efﬁcient animation of de-
+formable solids [Fau98] represent object by linearized dis-
+placement constraints. For the stable simulation of soft bod-
+ies [MHTG05] project the positions of particles onto a con-
+ﬁguration obtained via shape matching of original to current
+positions.
+The Multigrid method has been used successfully in com-
+putational sciences for many decades (see [McC87] for
+an introduction). Recently, it has been introduced to com-
+puter graphics, mainly in connection with the Finite Ele-
+ment Method such as in [DDCB01,CGC∗02,WT04,GW06].
+To solve the linear Poisson equation arising in incompress-
+ible ﬂuid simulation [CFL∗07] use an algebraic Multigrid
+method while [OGRG07] leverage the hierarchical nature of
+the method to adaptively simulate deformations.
+The latter paper uses the Multigrid approach to locally
+reﬁne objects where stresses are high. In contrast, our ap-
+proach is able to generate ﬁne detail everywhere in the ob-
+ject. Neither locations of reﬁnement nor the number of hi-
+erarchy levels used change during the simulation which pre-
+vents visual artifacts typically produced by adaptive simula-
+tions.
+3. Position Based Simulation
+Since we propose an acceleration technique for the Position
+Based Dynamics approach and because we want to keep the
+paper as self contained as possible we brieﬂy summarize the
+core ideas of PBD. The objects to be simulated are repre-
+sented by a set of N particles and a set of M constraints.
+Each particle i has three attributes, namely
+mi
+mass
+xi
+position
+vi
+velocity
+Table 1: Attributes of a particle
+A constraint j is deﬁned by the ﬁve attributes shown in Ta-
+ble 2. With type bilateral is satisﬁed if Cj(xi1,...,xin j ) = 0.
+If its type is unilateral then it is satisﬁed if Cj(xi1,...,xin j ) ≥
+0. The stiffness parameter kj deﬁnes the strength of the con-
+straint in a range from zero to one.
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 3 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+n j
+cardinality
+Cj : R3nj →R
+scalar constraint function
+{i1,...inj}, ik ∈[1,...N]
+set of indices
+k j ∈[0...1]
+stiffness parameter
+unilateral or bilateral
+type
+Table 2: Attributes of a constraint
+Given this data and a time step ∆t, the simulation proceeds
+as follows:
+(1)
+forall particles i
+(2)
+initialize xi = x0
+i ,vi = v0
+i ,wi = 1/mi
+(3)
+endfor
+(4)
+loop
+(5)
+forall particles i do vi ←vi +∆twifext(xi)
+(6)
+forall particles i do pi ←xi +∆tvi
+(7)
+forall particles i do generateCollisionConstraints(xi →pi)
+(8)
+loop solverIterations times
+(9)
+projectConstraints(C1,...,CM+Mcoll,p1,...,pN)
+(10)
+endloop
+(11)
+forall particles i
+(12)
+vi ←(pi −xi)/∆t
+(13)
+xi ←pi
+(14)
+endfor
+(15) endloop
+Since the algorithm simulates a system which is second
+order in time, both the positions and the velocities of the
+particles need to be speciﬁed in (1)-(3) before the simulation
+loop starts. Lines (5)-(6) perform a simple explicit forward
+Euler integration step on the velocities and the positions. The
+new locations pi are not assigned to the positions directly but
+are only used as predictions. Non-permanent external con-
+straints such as collision constraints are generated at the be-
+ginning of each time step from scratch in line (7). Here the
+original and the predicted positions are used in order to per-
+form continuous collision detection. The solver (8)-(10) then
+iteratively corrects the predicted positions such that they sat-
+isfy the Mcoll external as well as the M internal constraints.
+Finally the corrected positions pi are used to update the po-
+sitions and the velocities. It is essential here to update the
+velocities along with the positions. If this is not done, the
+simulation does not produce the correct behavior of a sec-
+ond order system.
+4. The System to be solved
+In the rest of the paper we will focus on the solver (8)-(10)
+because this is the part of the algorithm where almost all of
+the simulation time is spent. Let us ﬁrst look at the original
+Gauss-Seidel Solver proposed in [MHR06].
+The goal of the solver step is to correct the predicted
+positions pi of the particles such that they satisfy all con-
+straints. The problem that needs to be solved comprises of a
+set of M equations for the 3N unknown position components,
+where M is now the total number of constraints. This system
+does not need to be symmetric. If M > 3N (M <3N) the
+system is over-determined (under-determined). In addition
+to the asymmetry, the equations are in general non-linear.
+The function of a simple distance constraint C(p1,p2) =
+(p1 −p2)2 −d2 yields a non-linear equation. What compli-
+cates things even further is the fact that collisions produce
+inequalities rather than equalities. Solving a non-symmetric,
+non-linear system with equalities and inequalities is a tough
+problem.
+Let p be the concatenation [pT
+1 ,...,pT
+N]T and let all the
+constraint functions Cj take the concatenated vector p as in-
+put while only using the subset of coordinates they are de-
+ﬁned for. We can now write the system to be solved as
+C1(p) ≻0
+...
+CM(p) ≻0,
+where the symbol ≻denotes either = or ≥. Newton-
+Raphson iteration is a method to solve non-linear symmet-
+ric systems with only equalities. The process starts with a
+ﬁrst guess of a solution. Each constraint function is then lin-
+earized in the neighborhood of the current solution using
+C(p+∆p) = C(p)+∇pC(p)·∆p+O(|∆p|2) = 0.
+(1)
+This yields a linear system for the global correction vector
+∆p
+∇pC1(p)·∆p
+= −C1(p)
+...
+∇pCM(p)·∆p = −CM(p),
+where ∇pCj(p) is the 1 × N dimensional vector containing
+the derivatives of the function Cj w.r.t. all its parameters, i.e.
+the N components of p. It is also the jth row of the linear sys-
+tem. Both the rows ∇pCj(p) and the right hand side scalars
+−Cj(p) are constant because they are evaluated at the loca-
+tion p before the system is solved. When M = 3N and only
+equalities are present, the system can be solved by any linear
+solver, e.g. PCG. Once it is solved for ∆p the current solution
+is updated as p ←p+∆p. A new linear system is generated
+by evaluating ∇pCj(p) and −Cj(p) at the new location after
+which the process repeats.
+If M̸ = 3N the resulting matrix of the linear system is
+non-symmetric and not invertible. [GHF∗07] solve this prob-
+lem by using the pseudo-inverse of the system matrix which
+yields the best solution in the least-squares sense. Still, han-
+dling inequalities is not possible directly.
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 4 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+5. The Non-Linear Gauss-Seidel Solver
+The non-linear Gauss-Seidel solver of PBD solves each con-
+straint equation separately. Each constraint yields a single
+scalar equation C(p) ≻0 for all the particle positions as-
+sociated with it. The subsystem is therefore highly under-
+determined. PBD solves this problem as follows. Again,
+given p we want to ﬁnd a correction ∆p such that C(p +
+∆p) = 0. It is important to notice that PBD also linearizes
+the constraint function but individually for each constraint.
+The constraint equation is approximated by
+C(p+∆p) ≈C(p)+∇pC(p)·∆p = 0.
+(2)
+The problem of the system being under-determined is solved
+by restricting ∆p to be in the direction of ∇pC which con-
+serves the linear and angular momenta. This means that only
+one scalar λ - a Lagrange multiplier - has to be found such
+that the correction
+∆p = λ∇pC(p).
+(3)
+solves Eq. (2). This yields the following formula for the cor-
+rection vector of a single particle i
+∆pi = −s wi∇piC(p),
+(4)
+where
+s =
+C(p)
+∑j w j|∇pjC(p)|2
+(5)
+and wi = 1/mi.
+As mentioned above, this solver linearizes the constraint
+functions. However, in contrast to the Newton-Raphson
+method, the linearization happens individually per con-
+straint. Solving the linearized constraint function of a single
+distance constraint for instance yields the correct result in a
+single step. Because the positions are immediately updated
+after a constraint is processed, these updates will inﬂuence
+the linearization of the next constraint because the lineariza-
+tion depends on the actual positions. Asymmetry poses no
+problem because each constraint produces one scalar equa-
+tion for one unknown Lagrange multiplier λ. Inequalities are
+handled trivially by ﬁrst checking whether C(p) ≥0. If this
+is the case, the constraint is simply skipped.
+6. The Multi-Grid Solver
+In this section we present our non-linear Multi-Grid solver.
+The crucial part is the construction of a data structure - a hi-
+erarchy of constrained particle systems. Once this data struc-
+ture is constructed, the solution process is straight forward.
+6.1. Hierarchical Particle Systems
+The constrained particle system composed of the set of N
+particles and the set of M constraints represents the ﬁnest
+level 0 of the hierarchy. In speciﬁc settings, this level 0 par-
+ticle system has a speciﬁc structure. In the case of cloth sim-
+ulation it represents a triangle mesh while deformable solids
+are typically represented by tetrahedral meshes.
+A particle system at a coarser level l contains a proper
+subset of the particles at level l −1. Thus, a particle present
+at level l is contained in all ﬁner level particle systems l −
+1...0. We deﬁne the level of a particle to be the coarsest
+level which contains it even though it is contained in all ﬁner
+levels as well (see Fig. 5).
+Two types of constraint are distinguished. Cardinality-1
+constraints and cardinality-n constraints with n > 1. Each
+particle system in the hierarchy has its own set of cardinality-
+n constraints while cardinality-1 constraints are associated
+with their particles and are used in all levels of the hierarchy
+in which the particle is present.
+We deﬁne two particles to be connected (or neighbors)
+at level l if they share at least one cardinality-n constraint on
+this level. To be able to propagate information from one level
+to the next, a level l particle must be connected to at least one
+level l +1 particle on level l. This must hold for all levels but
+the coarsest. We call the set of level l +1 particles connected
+to a level l particle the parents of the level l particle. Thus, all
+particles except the ones on the coarsest level need to have
+al least one parent (see Fig. 1).
+This deﬁnition of the data structure solves one main prob-
+lem brought up in the introduction, namely how to restrict
+unilateral constraints to coarser levels. In the simulation sce-
+narios we target, the only unilateral constraints are colli-
+sion constraints which typically have cardinality 1. Since
+cardinality-1 constraints are bound to the associated parti-
+cle, they are simply processed as in PBD on each level the
+particle exists. The same is true for other cardinality-1 con-
+straints such as attachments.
+6.2. Particle Restriction
+We ﬁrst describe how the particle subsets on each level are
+selected. Given the particles of a ﬁne level (level l say) and
+the connectivity on the ﬁne level, one has to choose a proper
+subset of the particles to form the set of particles of coarse
+level l +1. Many choices are possible as long as the restric-
+tion is met that each ﬁne particle is connected on the ﬁne
+level to at least one coarse particle. As [CFL∗07] note, this is
+the so-called vertex or node cover problem [Pap97] known
+to be NP-complete. Fortunately, there is no need to work
+with the optimal solution, a good suboptimal solution is ﬁne
+too. The better the solution the faster the method becomes,
+though.
+In [CFL∗07] the authors use a heuristic greedy algorithm.
+They ﬁrst mark all the particles as ﬁne. Then, while travers-
+ing the mesh certain particles are marked as coarse. If the
+mesh is not connected the process has to be restarted for each
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 5 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+disconnected component. We propose a simpler algorithm
+that processes a disconnected mesh in one sweep. It can also
+handle a restricted version of the original constraint, namely
+the constraint that each ﬁne vertex has at least k parents. For
+k > 1 the number of particles from ﬁne to coarser levels de-
+creases more slowly. This yields smoother error propagation
+but more projection work on coarser levels. We use k = 2 in
+our examples.
+First all particles are marked as coarse. Each particle also
+stores the number of coarse neighbors. This value is ini-
+tialized with the total number of neighbors. Then, all the
+particles are traversed in an arbitrary order. A particle is
+marked ﬁne if two conditions are met. First, the number of
+its coarse neighbors must be greater or equal k and second,
+all the neighboring ﬁne vertices must have strictly more than
+k coarse neighbors. If the particle is marked as ﬁne, the num-
+ber of coarse neighbors of all its neighbors is decreased by
+one.
+The convergence of the solver is improved if attached par-
+ticles are kept in the coarse levels of the hierarchy. However,
+keeping all of them in all levels makes coarser meshes un-
+necessarily dense. One way to solve this problem is to mark
+coarse attached vertices as ﬁne only with a certain proba-
+bility. An alternative solution is to handle attached vertices
+last because the probability that a particle is marked as ﬁne
+decreases towards the end of the process.
+To make the solver faster, each particle pi stores pointers
+to its parents p j on the next coarser level plus corresponding
+weights wij. The weights are computed as
+ˆwij =
+1
+di j/max j(dij)+ε ,
+(6)
+where dij is the distances between child and parent in
+the original mesh. We use the normalized weights wi j =
+ˆ
+wij/∑j ˆwi j. The important feature of these weights is the fact
+that if the particle coincides with one of its parents this par-
+ent gets a weight of 1 where all other get zero weights. This
+is true for ε = 0 which yields ˆwij = ∞for the non-normalized
+weight. To prevent this numerically problematic situation we
+add a small ε to the denominator.
+6.3. Constraint Restriction
+A question still open is how to generate the cardinality-n
+constraints on coarser levels. Here we handle the case of
+cardinality-2 distance constraints and discuss higher order
+constraints later. The algorithm for generating the level l
+constraints given the level l −1 constraints proceeds as fol-
+lows:
+First all level l −1 constraints are copied to level l. Now
+certain constraints contain ﬁne particles not present in level
+l. This problem is solved by processing all ﬁne particles one
+by one. Each ﬁne particle pi is collapsed into one of its
+coarse neighbors p j (see Fig. 2). The constraint connecting
+Figure 1: A ﬁne level l is composed of all the particles shown
+and the dashed constraints. The next coarser level l +1 con-
+tains the proper subset of back particles and the solid con-
+straints. Each ﬁne white particle needs to be connected to
+at least k (=2) black particles – its parents – shown by the
+arrows.
+pi and p j is removed. For all neighbors pk of particle pi, if
+pk is also a neighbor of p j the constraint between pk and pi
+is removed. Otherwise, it is replaced by a constraint connect-
+ing pk and p j. Two question remain open. How to choose p j
+among the coarse neighbors of pi and how to compute the
+distance for the new constraint from pk to pj.
+To choose a coarse neighbor p j we ﬁrst compute the av-
+erage of the positions of all coarse neighbors of pi using the
+original positions of the particles. For p j we then choose the
+neighbor that is closest to the averaged position. This choice
+produces evenly distributed edge lengths.
+There are multiple ways to compute the rest distance of
+the new constraint from pk to pj. One possibility is to use
+the sum of the rest distances of the constraints pk −pi and
+pi −p j (see Fig. 2 (b)). This deﬁnition mimics geodetic dis-
+tances within the manifold of the mesh. If a cut runs through
+the original mesh the distance constraints will not bridge the
+gap but will correctly measure the distance around the cut.
+However, this deﬁnition might yield constraints that are too
+loose because the paths along the mesh edges are only ap-
+proximations of geodesics.
+Another possible way of computing the distance of the
+coarser constraints is to measure the distance between pk and
+p j in the original pose of the particle system or mesh. For
+initially ﬂat pieces of cloth for instance, this measure is the
+correct one while for non ﬂat pieces the resulting constraints
+might be too tight because they force the cloth back to the
+original curved state. Also, such constraints will bridge cuts
+which results in incorrect behavior. Both approaches have
+applications they are best suited for.
+One useful property of this algorithm is the fact that if
+the distance constraints on the ﬁnest level form a triangle
+mesh, all coarser meshes will be triangle meshes as well,
+because edge collapses conserve the triangle mesh property.
+This is particularly useful for level of detail physics because
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 6 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+pi
+pj
+pk
+pj
+pk
+(a)
+(b)
+Figure 2: Fine particle pi is collapsed into the coarse neigh-
+bor pj. The dashed edges in (a) are removed. Constraint
+pk −pi in (a) becomes the new constraint pk −p j in (b).
+The new constraint length is computed from the constraints
+pk −pi and pi −pj.
+for objects far from the camera, only coarse meshes can be
+used for both simulation and visualization.
+Higher order constraints such as bending constraints
+might be generalized in a similar way. However, as men-
+tioned in the introduction, deformable objects typically have
+low bending resistance and therefore, handling those con-
+straints in coarser levels is not necessary. Also, bending is a
+local phenomenon that appears when the material is in a non
+stretched state.
+7. Hierarchical Solver
+Once the hierarchical data structure is in place, the Multigrid
+algorithm is fast and simple to implement:
+1. Start at the coarsest level: l ←lmax
+2. Save all positions pi of the level l particles in additional
+state variables qi.
+3. Run one (or more) PBD solver steps on the current level,
+i.e. project all the cardinality-1 constraints of all the level
+l particles plus all the cardinality-n constraints of this
+level using non-linear Gauss-Seidel.
+4. If l = 0 stop, else go to the next ﬁner level: l ←l −1
+5. Correct the position of each particle i on level l using
+pi ←pi + ∑
+j∈P(i)
+wi j (p j −q j),
+(7)
+where P(i) is the set of the indices of the parents of par-
+ticle i.
+6. Go to step 2.
+8. Discussion
+More sophisticated schemes are possible. Typical Multigrid
+schemes perform multiple passes up and down the hierar-
+chy. However, we found, that this simple and fast scheme is
+sufﬁcient to achieve the desired stiffness of the deformable
+objects.
+It is important to note that only the corrections com-
+puted on a level are propagated down the hierarchy and not
+the newly computed positions themselves. This guarantees
+that all the small detail in the high resolution levels is pre-
+served. Coarse geodesic-based distance constraints only grip
+if the entire material between the adjacent particles is fully
+stretched as desired. They do not affect the simulation other-
+wise. For this to be true, we deﬁne all higher level distance
+constraint to be unilateral upper limit constraints.
+One of the main reasons developers use physics in games
+is to make environments destructible. Destructible cloth is
+tearable cloth. In case of tearing, the hierarchy needs to be
+updated. The tearing algorithm described in [MHR06] is
+based on particle splitting. Such a split clones a particle mul-
+tiple times an assigns subsets of adjacent triangles to each of
+the clones. In case of a particle split, the parent links as well
+as the adjacent constraints in the hierarchy get invalid. If they
+were kept they would potentially bridge cut lines resulting in
+ghost inﬂuences across the cut. We take a conservative ap-
+proach to solve this problem. First all the parent links and
+adjacent constraints of the split particle are removed. The
+algorithm then proceeds recursively up the hierarchy along
+the parent links and removes constraints and parent links of
+parents on coarser levels as well (see Fig. 8).
+Besides the simplicity and effectiveness of the method,
+it also has its drawbacks. With very low iteration counts of
+the PBD solver, visual artifacts may occur if the hierarchi-
+cal meshes are of poor quality. This effect is removed by
+increasing the iteration count of the subsequent PBD step
+to three or four. Also, the hierarchical solver cannot be par-
+allelized as easily as the Gauss-Seidel type solver of PBD.
+Currently, we run the hierarchical solver sequentially before
+we start the parallel PBD solver. We already mentioned that
+we do not consider the bending constraints in higher levels
+which is a restriction of the current implementation. How-
+ever, while increased stretching stiffness increases the qual-
+ity of the simulation, increased bending stiffness typically
+removes small detail and wrinkles. Such an effect can be
+achieved simply by making the simulation mesh coarser.
+9. Results
+We have integrated the method into a real time physics
+engine. The results presented here and in the video were
+recorded using a Intel Core2 CPU at 2.66 GHz, 2 GB of
+main memory and an NVIDIA GeForce 8800 GTX graphics
+card.
+Position Based Dynamics has become quite popular in
+the ﬁeld of game physics. It has recently been used in the
+open source physics engine Bullet for adding the new soft
+body feature. Our method is especially designed for devel-
+opers who use PDB and want to make it substantially faster.
+Therefore, we compare the performance of the new approach
+against the original method and not against more complex
+solvers.
+The diagram in Fig. 3 depicts the number of solver itera-
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 7 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+0
+5
+10
+15
+20
+25
+30
+25
+23
+21
+19
+17
+15
+13
+11
+9
+7
+5
+Number of itera!ons
+Rela!ve stretch (percent)
+0 hierarchy levels
+3 hierarchy levels
+5 hierarchy levels
+Figure 3: Number of regular PBD iterations needed to re-
+strict the stretch of a piece of cloth with 126 rows of trian-
+gles under gravity to a speciﬁc value without a hierarchy and
+with 3 and 5 hierarchy levels.
+tions needed to restrict stretching under gravity to a certain
+value. The measurements were done for the piece of cloth
+shown in Fig. 6. It contains 126 rows of triangles which
+makes the propagation of pressure waves through the cloth
+quite slow if the hierarchy is not used. The numbers clearly
+show the beneﬁt of using the hierarchical approach.
+Fig. 7 shows the effect of the Multigrid solver and the in-
+ﬂuence of the iteration count. At each time step, we ﬁrst run
+the Multigrid solver as described in Section 7. After that,
+the original Gauss-Seidel solver is run because the Multigrid
+solver does not consider the original constraints on level 0.
+We run the Gauss-Seidel solver two times while processing
+the constraints in the opposite order in the second iteration.
+This makes the process symmetric. The piece of cloth shown
+is composed of 11,500 triangles and simulated at 60 frames
+per second. Next, the Multigrid part is switched off while
+keeping the number of iterations at two. There is almost no
+performance gain because the total number of constraints in
+the entire hierarchy is typically smaller than the number of
+constraints on level 0. With only two iterations the material
+gets very stretchy. Increasing the number of iterations makes
+the cloth stiffer but at the same time slows the simulation
+down. Only with about 20 iterations the stiffness gets com-
+parable with the one using Multigrid. The frame rate in that
+case drops to about 12 frames per second however. In this
+example we used a regular base mesh (see Fig. 6) which is
+suitable for objects like ﬂags or canvases. The hierarchy in
+this case can be generated directly by using coarser versions
+of the base structure in coarser levels.
+In order to test the algorithm with irregular meshes we
+simulated a woman with a long dress (see Fig. 5). The ﬁnal
+results are shown in Fig. 4. The entire simulation including
+character animation and character - cloth interaction runs at
+about 30 frames per second. Without the Multigrid solver,
+wind and friction on the ﬂoor stretch the dress signiﬁcantly.
+As the second and the fourth image show, the Multigrid ap-
+proach makes the simulation of inextensible cloth possible
+at interactive rates.
+10. Conclusions and Future Work
+We have presented a non-linear multigrid algorithm to
+speedup position based dynamics signiﬁcantly. With this
+method, the nice features of PBD such as simplicity and sta-
+bility are kept while the problem of slow error propagation
+is removed.
+One line of future work is the improvement of the tear-
+ing algorithm. As mentioned earlier, our procedure is con-
+servative. It typically removes more constraints then neces-
+sary which makes the cloth around the tear line weaker than
+it should. We also work on other methods to generate the
+coarser meshed in the hierarchy.
+So far we have tested the method on cloth only. As a next
+step we will port it to our soft body simulation engine which
+we expect to be a straight forward task because the method
+is not restricted to triangles.
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 8 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+References
+[BFA02]
+BRIDSON R., FEDKIW R., ANDERSON J.: Ro-
+bust treatment of collisions, contact and friction for cloth
+animation. Proceedings of ACM Siggraph (2002), 594–
+603.
+[BJ07]
+BARBI ˇC J., JAMES D.: Time-critical distributed
+contact for 6-dof haptic rendering of adaptively sampled
+reduced deformable models. In SCA ’07: Proceedings of
+the 2007 ACM SIGGRAPH/Eurographics symposium on
+Computer animation (Aire-la-Ville, Switzerland, Switzer-
+land, 2007), Eurographics Association, pp. 171–180.
+[CFL∗07]
+CHENTANEZ N., FELDMAN B. E., LABELLE
+F., O’BRIEN J. F., SHEWCHUK J. R.: Liquid simulation
+on lattice-based tetrahedral meshes. In SCA ’07: Proceed-
+ings of the 2007 ACM SIGGRAPH/Eurographics sympo-
+sium on Computer animation (Aire-la-Ville, Switzerland,
+Switzerland, 2007), Eurographics Association, pp. 219–
+228.
+[CGC∗02]
+CAPELL
+S.,
+GREEN
+S.,
+CURLESS
+B.,
+DUCHAMP T., POPOVI ´C Z.: A multiresolution frame-
+work for dynamic deformations.
+In in proceedings of
+SCA 2002 (2002), pp. 41–47.
+[DDCB01]
+DEBUNNE G., DESBRUN M., CANI M.-P.,
+BARR A. H.:
+Dynamic real-time deformations using
+space and time adaptive sampling. In Computer Graph-
+ics Proceedings (Aug 2001), Annual Conference Series,
+ACM Press / ACM SIGGRAPH. Proceeding.
+[DSB99]
+DESBRUN M., SCHRÖDER P., BARR A.:
+In-
+teractive animation of structured deformable objects. In
+Proceedings of Graphics Interface ’99 (1999), pp. 1–8.
+[Ebe04]
+EBERLY D. H.: Game Physics. Elsevier, ISBN
+1-55860-740-4, 2004.
+[Fau98]
+FAURE F.: Interactive solid animation using lin-
+earized displacement constraints. In Eurographics Work-
+shop on Computer Animation and Simulation (EGCAS)
+(1998), pp. 61–72.
+[GHF∗07]
+GOLDENTHAL R., HARMON D., FATTAL R.,
+BERCOVIER M., GRINSPUN E.: Efﬁcient simulation of
+inextensible cloth. ACM Trans. Graph. 26, 3 (2007), 49.
+[GM97]
+GIBSON S. F., MIRTICH B.:
+A survey of de-
+formable models in computer graphics. Technical Report
+TR-97-19, MERL (1997).
+[GW06]
+GEORGII J., WESTERMANN R.:
+A multigrid
+framework for real-time simulation of deformable bodies.
+Computers & Graphics 30, 3 (2006), 408–415.
+[HSO03]
+HAUSER K. K., SHEN C., O’BRIEN J. F.: Inter-
+active deformation using modal analysis with constraints.
+In Graphics Interface ’03 (2003).
+[Jak01]
+JAKOBSEN T.: Advanced character physics ˝U the
+fysix engine. www.gamasutra.com (2001).
+[JP99]
+JAMES D. L., PAI D. K.: Artdefo, accurate real
+time deformable objects. In Computer Graphics Proceed-
+ings (Aug. 1999), Annual Conference Series, ACM SIG-
+GRAPH 99, pp. 65–72.
+[McC87]
+MCCORMICK S. F.: Multigrid Methods. Indus-
+trial and Applied Mathematics, Philidelphia, 1987.
+[MG04]
+MÜLLER M., GROSS M.: Interactive virtual ma-
+terials.
+In GI ’04: Proceedings of Graphics Interface
+2004 (School of Computer Science, University of Water-
+loo, Waterloo, Ontario, Canada, 2004), Canadian Human-
+Computer Communications Society, pp. 239–246.
+[MHR06]
+MÜLLER M., HENNIX B. H. M., RATCLIFF J.:
+Position based dynamics. Proceedings of Virtual Reality
+Interactions and Physical Simulations (2006), 71–80.
+[MHTG05]
+MÜLLER M., HEIDELBERGER B., TESCHER
+M., GROSS M.: Meshless deformations based on shape
+matching. Proceedings of ACM Siggraph (2005), 471–
+478.
+[NMK∗05]
+NEALEN A., MÜLLER M., KEISER R., BOX-
+ERMAN E., CARLSON M.: Physically based deformable
+models in computer graphics. Eurographics 2005 state of
+the art report (2005).
+[OGRG07]
+OTADUY M. A., GERMANN D., REDON S.,
+GROSS M.:
+Adaptive deformations with fast tight
+bounds. In SCA ’07: Proceedings of the 2007 ACM SIG-
+GRAPH/Eurographics symposium on Computer anima-
+tion (Aire-la-Ville, Switzerland, Switzerland, 2007), Eu-
+rographics Association, pp. 181–190.
+[Pap97]
+PAPADIMITRIOU C. H.:
+Computational Com-
+plexity. Addison-Wesklay Publishing Company, ISBN 0-
+201-53082-1, 1997.
+[Pro95]
+PROVOT X.: Deformation constraints in a mass-
+spring model to describe rigid cloth behavior. Proceed-
+ings of Graphics Interface (1995), 147 ˝U–154.
+[TPBF87]
+TERZOPOULOS D., PLATT J., BARR A.,
+FLEISCHER K.: Elastically deformable models. In Com-
+puter Graphics Proceedings (July 1987), Annual Confer-
+ence Series, ACM SIGGRAPH 87, pp. 205–214.
+[VCMT95]
+VOLINO P., COURCHESNE M., MAGNENAT-
+THALMANN N.:
+Versatile and efﬁcient techniques for
+simulating cloth and other deformable objects. Proceed-
+ings of ACM Siggraph (1995), 137–144.
+[WT04]
+WU X., TENDICK F.: Multigrid integration for
+interactive deformable body simulation. In ISMS (2004),
+pp. 92–104.
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 9 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+Figure 4: The Multigrid solver presented in this paper makes possible the simulation of high resolution cloth in real time. In
+the ﬁrst and third image, friction and wind forces let cloth simulated with conventional methods look stretchy. In the second and
+fourth image, this artifact is removed without noticeable performance drop.
+.
+Figure 5: The particle system deﬁned by the irregular cloth mesh is reduced step by step to build a hierarchy. A particle
+contained in a certain level of the hierarchy is contained in all the ﬁner levels as well.
+Figure 6: Often regular meshes can be used, e.g. for ﬂags or canvases. In this case the hierarchy can be generated directly
+without using the general reduction algorithm.
+c
+⃝The Eurographics Association 2008.
+
+===== PAGE 10 =====
+Matthias Müller / Hierarchical Position Based Dynamics
+Figure 7: The piece of cloth on the left is simulated using the Multigrid algorithm and two regular iterations. The other pieces
+are simulated conventionally using 2, 5, 10 and 20 iterations. The same stiffness is achieved only with 20 iterations but at about
+a ﬁfth of the framerate.
+Figure 8: When the cloth is torn, the hierarchy needs to be updated on all levels.
+c
+⃝The Eurographics Association 2008.

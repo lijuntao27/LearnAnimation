@@ -234,4 +234,4 @@ H 变 → Q=H·W_Q 变, K=H·W_K 变 → Q·K^T 变 → A 变
 - 论文用 `RelMultiHeadedAttention`（带相对位置编码的 attention）：核心算术同上，只是 `S_h` 里多加一项 `skew(Q_h·E_rel^T)`，详见 [[InbetweeningPositionalEncodings]]
 - 掩码在 `context_model.get_attention_mask` / `detail_model.get_attention_mask`
 - `W_Q` 在 `RelMultiHeadedAttention.q_linear`（一个大 `512×512` 矩阵）
-- 反向传播把损失传回 `W_Q` 的完整链见 [[Backpropagation]]
+- 反向传播把损失传回 `W_Q` 的完整链见 [[Backpropagation-Transformer]]；通用机制见 [[Backpropagation]]

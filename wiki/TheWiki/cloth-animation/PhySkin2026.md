@@ -28,7 +28,7 @@ summary: Meta 2026 准静态 CPU 骨骼驱动 draping：FPS 节点+可训练蒙�
 
 | 组件 | 结构 | 职责 |
 |---|---|---|
-| Hyper Modulator | 身体网格采 4096 点+法线→PE→Transformer(4 head)→Self-Attention pooling→MLP | 读身体形状，FiLM 调制 MLP_θ；点 token → **身体拓扑无关** |
+| Hyper Modulator | 身体网格采 4096 点+法线→PE→Transformer(4 head)→Self-Attention pooling→MLP | 读身体形状，[[FiLM]] 调制 MLP_θ；点 token → **身体拓扑无关** |
 | Pose Modulator | MLP 4×512 | 姿态 $\theta\in\mathbb{R}^{120}$ → 调制信号 |
 | Node Deformer | MLP 4×128（被调制） | 输入 LBS 后节点变换 $\{\chi^{skin}_i\}$，出修正 $\Delta\chi$ |
 
@@ -187,4 +187,5 @@ $$L_{phys}=\lambda_1 E_{StVK}+\lambda_2 E_{dihedral}+\lambda_3 E_{collision}+\la
 
 - 原文：[[RawSource/articles/PhySkin-2026]]
 - 对比：[[Compare-BoneDrivenCloth-Lineage]]
-- 概念：[[VirtualBones]] · [[QNN]] · [[RopeChain]] · 孪生：[[HyperBones2026]]
+- 概念：[[VirtualBones]] · [[QNN]] · [[RopeChain]] · [[FiLM]] · 孪生：[[HyperBones2026]]
+- 工程实践参考：[[SkirtQNN-Design]]（本项目移动端时装方案，架构与本文高度同构）

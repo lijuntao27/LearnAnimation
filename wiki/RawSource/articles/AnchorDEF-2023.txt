@@ -1,0 +1,1044 @@
+
+
+===== PAGE 1 =====
+
+Learning Anchor Transformations for 3D Garment Animation
+Fang Zhao1, Zekun Li1, Shaoli Huang1*, Junwu Weng1, Tianfei Zhou2,
+Guo-Sen Xie3, Jue Wang1, Ying Shan1
+1Tencent AI Lab 2ETH Zurich 3Nanjing University of Science and Technology
+Abstract
+This paper proposes an anchor-based deformation
+model, namely AnchorDEF, to predict 3D garment anima-
+tion from a body motion sequence. It deforms a garment
+mesh template by a mixture of rigid transformations with
+extra nonlinear displacements.
+A set of anchors around
+the mesh surface is introduced to guide the learning of
+rigid transformation matrices. Once the anchor transfor-
+mations are found, per-vertex nonlinear displacements of
+the garment template can be regressed in a canonical space,
+which reduces the complexity of deformation space learn-
+ing. By explicitly constraining the transformed anchors to
+satisfy the consistencies of position, normal and direction,
+the physical meaning of learned anchor transformations in
+space is guaranteed for better generalization. Furthermore,
+an adaptive anchor updating is proposed to optimize the
+anchor position by being aware of local mesh topology for
+learning representative anchor transformations. Qualita-
+tive and quantitative experiments on different types of gar-
+ments demonstrate that AnchorDEF achieves the state-of-
+the-art performance on 3D garment deformation prediction
+in motion, especially for loose-ﬁtting garments.
+1. Introduction
+Animating 3D garments has a wide range of applications
+in 3D content generation, digital humans, virtual try-on,
+video games, and so on. Existing pipelines of 3D garment
+animation usually rely on physics based simulation (PBS),
+which requires a large amount of computational resources
+and time costs, particularly for high-quality PBS methods.
+Some data-driven or learning-based methods have been
+proposed to quickly produce 3D garment deformation from
+static poses or motion sequences with low computational
+complexity [4,5,9,11,12,17,26–29,32,41]. However, many
+of them attach garment templates to the skeleton of hu-
+man body for modeling the articulation of garments, which
+*Corresponding author.
+Figure 1. 3D garment deformation predicted by the proposed An-
+chorDEF with body motions. Leveraging the anchor transforma-
+tions, AnchorDEF is able to realistically deform the garment mesh,
+especially for loose-ﬁtting garments, e.g., dresses.
+only work with tight garments, e.g., T-shirts and pants, and
+poorly address loose-ﬁtting ones, e.g., dresses and skirts.
+In this case, the topology of garments is different from the
+human body. Therefore, using the skinning blend weights
+of body yields discontinuities on deformed garment mesh.
+Several methods [27, 35] smooth out the blend weights to
+alleviate the discontinuities but may lose the shape details
+for large deformations of loose-ﬁtting garments, which do
+not closely follow body movements.
+To this end, we propose an anchor-based deformation
+model, namely AnchorDEF, for predicting 3D garment de-
+formation from a body motion sequence.
+It leverages a
+mixture of rigid anchor transformations to represent prin-
+ciple rotations and translations of garments to detach the
+1
+arXiv:2304.00761v1  [cs.CV]  3 Apr 2023
+
+
+===== PAGE 2 =====
+
+garment articulation from the body skeleton while preserv-
+ing the body movement prior, then nonlinear displacements
+can be regressed relatively easily in a canonical space. As
+shown in Fig. 1, our method can exploit anchor transforma-
+tions to realistically deform the garment mesh, especially
+for loose-ﬁtting garments, e.g., dresses.
+Speciﬁcally, given a sequence of body motions includ-
+ing poses and translations, we ﬁrst estimate rigid transfor-
+mations of a set of anchors around the garment mesh. Us-
+ing the linear blending skinning (LBS), the garment mesh
+template is deformed by a weighted combination of the an-
+chor transformations meanwhile per-vertex displacements
+of the mesh template are regressed to correct artifacts of the
+blended rigid transformations. To learn physically mean-
+ingful anchor transformations for better generalization, we
+enforce the transformed anchors to maintain consistency
+with the target’s position and normal. In addition, a relative
+direction constraint is employed to reduce garment-body in-
+terpenetrations, which is efﬁcient due to the sparseness of
+anchors. To make the learned anchor transformations effec-
+tively represent the garment deformation, an adaptive an-
+chor updating is further introduced to utilize mesh simpliﬁ-
+cation as supervision to optimize the anchor position. It pa-
+rameterizes the position with a local attention mask on ad-
+jacent mesh vertices and pushes the anchors towards folds
+and boundaries of garment mesh which usually determine
+the way of deformation.
+The main contributions of our work can be summarized
+as follows: 1) We propose an anchor-based deformation
+model which learns a set of anchor transformations and
+blend weights in a uniﬁed framework to represent the de-
+formation of 3D garments, especially for loose-ﬁtting ones.
+2) We propose to learn anchor transformations by position
+and normal consistencies as well as relative direction con-
+straint for better generalization and fewer garment-body in-
+terpenetrations. 3) We introduce an adaptive anchor updat-
+ing with the mesh simpliﬁcation as supervision to optimize
+the anchor position for learning representative anchor trans-
+formations.
+2. Related Work
+Most garment animation and deformation works can
+be categorized into physics-based simulations (PBS) and
+learning-based models.
+Physics-based simulations. PBS methods have been devel-
+oped for decades and achieved impressive accuracy, lever-
+aging laws of physics and stable accurate solvers [1,13,19],
+collision detection [24, 30, 36], and dry frictional con-
+tact [20, 22]. But the expensive computational costs, i.e.,
+long simulation time and high-performance devices often
+are unaffordable in our daily lives.
+Learning-based models. In contrast, learning-based mod-
+els, which utilize garment animation data attained from PBS
+or digital scanning to learn the deformation, can often give
+satisfactory enough animation visual results with less com-
+putational costs [27, 32], regardless of no explicit physical
+guarantee on accuracy. Previously, researchers have pro-
+posed many techniques depending on the motions of human
+bodies with linear conditional models [8, 11] or secondary
+motion graphs [14,15], with a constructed database of high-
+resolution meshes. Recent works [4, 27, 35] assume that
+the garment is a submesh of the skinned multi-person lin-
+ear model (SMPL) and use linear blend skinning (LBS) to
+transfer body shape to cloth shape. Beyond learning static
+results within a single frame, adopting recurrent neural net-
+works to handle the dynamic wrinkles of clothes is widely
+used [26, 32, 35]. For example, [32] prepares a database of
+PBS for dressed characters with some body shapes and mo-
+tion and uses the database to learn a function of body shape
+and dynamics for modeling cloth drape and wrinkles. Al-
+though learning-based models can be efﬁcient, their perfor-
+mance heavily relies on large amounts of high-quality PBS
+results or scanning data, which are usually costly [2,31,35].
+Thus, some works [3, 33] propose self-supervised training
+methods to constrain the model with some sort of physical
+laws to alleviate this problem. Additionally, to ensure the
+generalization of simulation, combining several pretrained
+pivot motion networks can handle different unseen garment
+styles [27] and simulation parameters [26].
+But most learning-based methods are limited to tight gar-
+ments and not suitable for dresses or clothes with more
+freedom, due to their assumption that garments are comple-
+mentary to SMPL, i.e., the deformation is closely related to
+body shape, not the motion. To tackle the dynamics, some
+works propose a neural ﬁeld to retain high-frequency de-
+tails [40], handle challenging areas [23], tackle multi-layer
+garments [34], and warp garments from the canonical pose
+to the deformation shape [6]. Without utilizing body shape
+parameters to establish a garment-body aligned model, [38]
+learns an intrinsic cloth shape descriptor embedding space
+and using different motion parameters to guide garment la-
+tent can attain different shape representation. To eliminate
+the alignment between clothes dynamics and body vertices,
+VirtualBones [26] extracts a set of rigid bones from the gar-
+ment animation and uses body motion to predict the bones’
+transformation to interpolate the garment shape. Instead of
+learning based on mesh, [39] uses a point transformer to
+predict point clouds of various outﬁts, for various human
+poses and shapes, which attains more topological ﬂexibility
+and the ability to model clothing separately from the body.
+VirtualBones [26] is the most related work to our
+method, which requires garment skeleton extraction with
+SSDR [18] as data preprocessing. Different from [26], we
+decompose the garment deformation by a set of adaptive
+anchors whose rigid transformations and blend weights are
+learned in a uniﬁed framework.
+2
+
+
+===== PAGE 3 =====
+
+Body Motion Sequence
+GRU
+Skinning
+Rigid Anchor 
+Transformation
+Adaptive Anchor 
+Updating
+Local 
+Attention 
+Mask
+Transformation 
+Consistency
++
+Blend 
+Weights
+Anchor Transformation Learning
+Deformation with Anchors
+Garment Template
+Deformed Garment
+Displace
+ments
+Figure 2. Overview of the proposed AnchorDEF. Given a body motion sequence and a garment mesh template, the garment deformation is
+predicted by a weighted average of rigid anchor transformations with per-vertex displacements in a canonical space. We explicitly constrain
+the transformed anchors to satisfy the consistencies of position, normal and direction to guarantee the physical meaning of learned anchor
+transformations in space for better generalization. Starting from the cluster centers of mesh vertices, the anchor position is updated by a
+local attention map on adjacent mesh vertices with mesh simpliﬁcation as supervision. All parameters in our model can be jointly optimized
+in a uniﬁed framework.
+3. Our Method
+We aim to learn an animated model which is able to pre-
+dict dynamic 3D garment deformations given a body motion
+sequence. In this section, we introduce AnchorDEF, an
+anchor-based deformation model, which leverages s set of
+adaptive anchors around mesh surface to deform a garment
+mesh template by a mixture of rigid anchor transforma-
+tions with additional per-vertex displacements in a canon-
+ical space, where the anchor transformations are learned
+by the consistencies of position, normal and direction. The
+overview of AnchorDEF is illustrated in Fig. 2.
+3.1. Deformation with Anchors
+3D animated models of human body, e.g., SMPL [21],
+usually deform a body mesh template T with blendshapes
+and skinning, which can be deﬁned as
+V = W(T + B(θ), J, θ, w),
+(1)
+where W is a skinning function, e.g., linear blend skinning,
+with a skeleton J, pose parameters θ and blend weights w,
+V is the posed vertices and B is the blendshape correspond-
+ing to the body pose θ. Since the garment is a kind of soft
+body and it is hard to directly predict the coordinates of
+each vertex from a body motion sequence, here we also con-
+sider to decompose the garment deformation into two parts
+including a weighed average of rigid transformations and
+nonlinear displacements.
+Most data-driven garment models directly associate gar-
+ments with the skeleton of human body [4,27,32], i.e., they
+apply the skinning function to animate the garment by di-
+rectly using the blend weights of body mesh vertices in the
+neighborhood, where it is assumed that garments closely
+follow the body movement. However, for loose-ﬁtting gar-
+ments, the clothing deformation usually contains more com-
+plex nonrigid effects compared to human body which can be
+seen as a rigid body. In this case, garments behave signiﬁ-
+cantly differently from the body. Thus, it is unreasonable to
+attach the garment to the body skeleton.
+To address this issue, we adopt a set of anchors {pn}
+around the mesh surface to guide the garment deformation,
+which detaches the garment from the body skeleton while
+preserving the body movement prior. Given a body motion
+sequence consisting of poses and translations, rigid anchor
+transformations including rotations {Rn} and translations
+{Tn} are estimated ﬁrstly by using Gated Recurrent Units
+(GRU) [7] (see the supplementary material for the network
+structure). Then, the m-th deformed garment vertex vm can
+be represented by a weighted average of anchor transforma-
+tions:
+vm =
+N
+X
+n=1
+wmn(Rnvc
+m+Tn), wmn ≥0 and
+N
+X
+n=1
+wmn = 1,
+(2)
+3
+
+
+===== PAGE 4 =====
+
+where vc
+m is the m-th vertex of garment mesh template,
+wmn is the blend weight of vm regarding to the n-th anchor
+and N is the number of anchors. To determine the anchor-
+vertex relationship and maintain the sparsity of {wn}, we
+initialize the anchors as the clustering centers of vertices of
+the mesh template. Then, each vertex is only inﬂuenced
+by the blend weights of its N ′ (N ′ ≪N) nearest anchors
+and the others remain zeros during training. Compared to
+the direct prediction of deformed mesh vertex coordinates,
+the rigid anchor transformations provide more generalized
+representations of complex deformations due to fewer pa-
+rameters required to be learned for the prediction.
+Two strategies of anchor transformation conﬁguration
+are designed for loose and tight types of garments. For the
+loose type, to utilize the prior of the global human body ori-
+entation Rglobal, we predict transformations relative to the
+root joint Jroot of the body and the anchor transformation
+can be deﬁned as:
+Rloose
+n
+= RglobalRn([θ, t]),
+T loose
+n
+= Rglobal(Tn([θ, t]) −Rn([θ, t])Jroot) + Jroot,
+(3)
+where θ and t are the body pose and translation, respec-
+tively. For the tight type, the garment mostly follows the
+body movement. Thus, we predict an incremental change
+on the basis of body vertex rotation Rbody and offset Tbody:
+Rtight
+n
+= RbodyRn([θ, t]),
+T tight
+n
+= RbodyTn([θ, t]) + Tbody,
+(4)
+where Rbody and Tbody is the transformation of the body
+mesh vertex closest to the anchor pn. Furthermore, we can
+combine these two strategies for garments with both tight
+and loose parts, e.g., dresses, by classifying which part the
+anchor belongs to according to its distance to body joints.
+Once the primary rotations and translations in the gar-
+ment deformation caused by the articulation are expressed
+in Eq. (2), the nonlinear residual deformation can be disen-
+tangled with the garment articulation and deﬁned as per-
+vertex displacements D([θ, t]) in an unposed canonical
+space. Utilizing the skinning function in Eq. (1), the overall
+garment deformation is given by
+Vpred = W(Tg + D([θ, t]), G([θ, t]), wp),
+(5)
+where Tg is the garment mesh template, wp is the anchor-
+vertex blend weights and G([θ, t]) is the anchor transforma-
+tions predicted with the body motion. We argue that such
+decomposition by anchors extremely reduces the complex-
+ity of pose-dependent garment deformation prediction be-
+cause large deformations have been handled by transforma-
+tions of sparse anchors and only small displacements need
+to be regressed in the canonical space.
+Figure 3. Examples of adaptive anchor updating by using the local
+attention mask with the mesh simpliﬁcation as supervision. The
+blue points are anchors initialized by k-means and the orange ones
+are the updated anchors.
+3.2. Learning Anchor Transformations
+Different from [26] which resorts to the external skin-
+ning decomposition algorithm, i.e., SSDR [18], to extract
+the garment skeleton from smoothed mesh sequences, here
+we jointly learn rigid transformations, blend weights and
+positions of anchors in a uniﬁed framework.
+We ﬁrst apply an L2 loss term on the predicted mesh
+vertices to recover the shape of deformed mesh:
+Lrec = ||Vpred −Vgt||2
+2,
+(6)
+which minimizes the Euclidean distance between the pre-
+dicted vertices and the ground-truth deformed vertices.
+Then a loss term is used to keep the similarity of the graph
+Laplacians between two meshes:
+Llap = || △Vpred −△Vgt||2
+2.
+(7)
+A collision term [26] is also added to avoid garment-body
+collisions. Thus, the loss on the vertex can be given by
+Lvert = Lrec + β1Llap + β2Lcollision,
+(8)
+where β1 and β2 are trade-off coefﬁcients for controlling
+the degree of smoothing and collision, respectively.
+However, only optimizing the vertex position cannot
+guarantee the physical meaning of learned anchor transfor-
+mations in space, which leads to poor generalization. Thus,
+we explicitly constrain the transformed anchors to be lo-
+cated around the deformed mesh surface. To this end, the
+position of anchor p is recalculated by its adjacent mesh
+vertices:
+p = 1
+K
+X
+vc
+k∈K(p,Tg)
+vc
+k,
+(9)
+where K(p, Tg) is the K nearest vertices of p on the mesh
+template. Then, the target point ptgt of transformed anchor
+pG can be deﬁned with the same set of vertices K(p, Tg) on
+the deformed mesh and a transformation consistency loss is
+deﬁned as
+Lconsis = ||pG −ptgt||2
+2 + γ||n(pG) −n(ptgt)||2
+2,
+(10)
+where n(.) is the unit normal of point and γ is a weight fac-
+tor. By encouraging the transformed anchor pG to be simi-
+lar to ptgt in position and normal, the learned anchor trans-
+formation indicates the mean transformation of K nearest
+4
+
+
+===== PAGE 5 =====
+
+w/o Lconsis
+w/ Lconsis
+Ground truth
+w/o Lanch
+w/ Lanch
+Ground truth
+(a)
+(b)
+Figure 4. Qualitative comparison with and without different components of AnchorDEF including (a) anchor transformation consistency
+Lconsis and (b) adaptive anchor updating Lanch. Without Lconsis, the model cannot accurately predict the shape of deformed mesh and
+loses some surface geometry details. Without Lanch, the model is unable to produce realistic garment deformations due to the under-
+expressed anchor transformations.
+vertices of p. It can be viewed as a regularization for the
+transformation magnitude and direction to discover essen-
+tial transformations in deformation.
+We further enforce the direction from ptgt to pG to be
+consistent with the direction of n(ptgt) by minimizing the
+following penalty term:
+Ldir = 1 −cos(pG −ptgt, n(ptgt)),
+(11)
+where cos(·, ·) is the cosine similarity.
+Intuitively, this
+penalty term makes pG tend to be outside of the plane
+formed by ptgt to reduce the garment-body interpenetration.
+Adaptive Anchor Updating. It is still not enough to have a
+physically meaningful anchor transformation, we also need
+an expressive transformation in geometry to better represent
+the garment deformation. We observe that mesh regions
+with folds and boundaries usually play an important role
+on showing garment shape characteristics and contain more
+deformation information compared with smooth regions.
+To make the anchors reﬂect such intrinsic structure of
+garment shape, we propose to employ mesh simpliﬁcation
+to provide a signal of supervision for ﬁnding such represen-
+tative anchors. Here Quadric Error Metric (QEM) [10] is
+used to obtain simpliﬁed mesh vertices by collapsing edges
+while preserving the garment topology. Because there is
+no one-to-one correspondence between the anchors {pn}
+and the simpliﬁed vertices {˜vm}, the Chamfer distance is
+adopted as the optimization objective:
+Lanch =
+X
+p
+min
+˜v
+||p −˜v||2
+2 +
+X
+˜v
+min
+p ||p −˜v||2
+2.
+(12)
+To be able to update the anchor position, we rewrite Eq. (9)
+using learnable weights α as
+p =
+1
+PK
+j=1 eαj
+K
+X
+k=1
+eαkvc
+k.
+(13)
+Actually, this equals to learning a local attention mask for
+the anchor to determine how the adjacent vertices contribute
+to its position. Fig. 3 shows that by optimizing the weights
+α with supervision of the simpliﬁed vertices, the anchors
+are pushed to inﬂection points of folds and boundaries of
+the mesh and thus able to better represent the deformed
+mesh vertices by interpolating their transformation matri-
+ces. Note that we optimize the anchor position on the entire
+dataset not only on the mesh template because some smooth
+regions of the template may create new folds after posing.
+On the other hand, if we reformulate the transformed an-
+chor pG with Eq. (13) as:
+pG = Rp + T =
+1
+PK
+j=1 eαj
+K
+X
+k=1
+eαk(Rvc
+k + T),
+(14)
+the process of transformation learning for the anchor, i.e.,
+Eq. (10), can be interpreted as a way to ﬁnd an appropri-
+ate transformation for its adjacent mesh vertices by the im-
+portance which is reﬂected in the weights learned from the
+mesh simpliﬁcation. The larger the weight, the greater the
+impact of the vertex transformation on the anchor transfor-
+mation learning.
+5
+
+
+===== PAGE 6 =====
+
+(a)
+(b)
+Figure 5. Visualization of anchors transformed by (a) only opti-
+mizing the mesh vertices during training and (b) AnchorDEF.
+Lastly, combining Eq. (8), Eqs. (10) to (12), the overall
+objective function for our model is given by:
+L = Lvert + λ1Lconsis + λ2Ldir + λ3Lanch,
+(15)
+where λs are loss weights.
+4. Experiments
+We evaluate the proposed AnchorDEF on the VTO [32]
+dataset containing two types of garments, i.e., dress and
+T-shirt. Following [26], RMSE (Root Mean Squared Er-
+ror), Hausdorff distance and STED (Spatio-Temporal Edge
+Difference) [37] are adopted to assess the quality of de-
+formed meshes.
+The ﬁrst two measure the distance be-
+tween predicted and ground truth meshes and STED reﬂects
+the difference between their dynamics. We also compare
+AnchorDEF against other 3D garment deformation meth-
+ods [26,27].
+Implementation Details. To capture the motion dynam-
+ics, a network with 2 GRU layers of size 256 is used as the
+body motion encoder. Two 2-layered MLPs of size 256 are
+used to regress the anchor transformations and per-vertex
+displacements, respectively. The number of anchors asso-
+ciated with each mesh vertex is set to 8, which can obtain
+the desired smooth surface, and the number of neighbor-
+ing vertices for computing the anchor position is set to 128.
+For the garment sequences of VTO, 4 clips are randomly
+selected for testing and the rest is used as the training set,
+and the length of training sequence is 30. Please refer to
+the supplemental materials for more details on training and
+inference.
+4.1. Ablation Study
+We validate the effectiveness of main components in our
+proposed AnchorDEF. We ﬁrstly assess the importance of
+anchor transformation consistency, i.e., Lconsis in Eq. (10).
+As reported in Table 1, keeping the consistency of learned
+anchor transformations is able to improve all metrics due
+Methods
+w/o Lconsis
+w/o Lanch
+AnchorDEF
+RMSE ↓
+17.21
+16.49
+16.05
+Hausdorff ↓
+75.01
+74.53
+74.20
+STED ↓
+0.0595
+0.0526
+0.0493
+Table 1. Quantitative results obtained by different components of
+AnchorDEF, i.e., without anchor transformation consistency (w/o
+Lcosis ), without adaptive anchor updating (w/o Lanch) and the
+full model (AnchorDEF).
+w/o Ldir
+w/ Ldir
+w/o Ldir
+w/ Ldir
+Figure 6. Qualitative comparison with and without the penalty
+Ldir on the direction from the target anchor to the transformed
+one.
+20
+Ground truth
+80
+160
+320
+Figure 7. Qualitative comparison of using different numbers of
+anchors. Using 160 anchors produces ﬁner and more accurate de-
+formation compared with other anchor numbers.
+Num. Anchor
+20
+80
+160
+320
+RMSE ↓
+17.78
+16.82
+16.05
+17.52
+Hausdorff ↓
+75.30
+74.71
+74.20
+75.13
+STED ↓
+0.0620
+0.0539
+0.0493
+0.0625
+Table 2. Quantitative results of using different numbers of anchors.
+to better generalization.
+Fig. 4 (a) illustrates the quali-
+tative comparison. One can observe that without Lconsis
+the model cannot accurately predict the shape of deformed
+mesh and loses some surface geometry details.
+To evaluate the inﬂuence of adaptive anchor updating,
+Table 1 also reports the results without using Lanch in
+Eq. (12). The performance drops only using the clustering
+centers of k-means as the anchors. The reason is that com-
+pared with the clustering, the supervision with mesh sim-
+pliﬁcation can provide key topology information, e.g., folds
+and boundaries, which is useful for learning representative
+6
+
+
+===== PAGE 7 =====
+
+Figure 8. Examples of our AnchorDEF for dynamic garment deformation in motion. The ﬁrst row is the ground truth generated by
+physics-based simulation [25]. The second row is the results obtained by AnchorDEF. Our method can produce natural and realistic
+clothing dynamics, e.g., wrinkles from jumping and the swing of the dress caused by running.
+anchor transformations. The qualitative results are shown in
+Fig. 4 (b). It can be observed that without Lanch the model
+is unable to produce realistic garment deformations due to
+the under-expressed anchor transformations.
+Fig. 5 (a) and (b) visualizes the anchors transformed
+by only optimizing the mesh vertices during training and
+AnchorDEF, respectively. For Fig. 5 (a), without the con-
+sistency constraint for anchor transformation, many of the
+transformed anchors are not on the deformed mesh surface,
+which is lack of clear physical meaning in space and easy
+to overﬁt. In contrast, AnchorDEF enforces the anchors to
+be transformed onto the deformed mesh surface, which pre-
+vents overﬁtting to a certain extent, thus has better general-
+ization when testing. Furthermore, as shown in Fig. 5 (b),
+the transformed anchors are mainly distributed at the folds
+and boundaries of the mesh because of our adaptive anchor
+updating according to simpliﬁed mesh vertices, and thus ca-
+pable of better expressing the deformation of mesh vertices,
+in particular those vertices far from them. In this way, the
+complexity of garment deformation space is reduced more
+effectively and more mesh shape details can be preserved.
+Then we investigate the impact of the penalty Ldir
+(Eq. (11)) on the direction from the target anchor to the
+transformed one. As illustrated in Fig. 6, with Ldir the
+model can reduce the garment-body interpenetration. By
+enforcing the transformed anchors to be on the positive di-
+rection of target normals, the garment mesh vertices inﬂu-
+enced by these anchors can be effectively pushed to the out-
+side of the body surface while keeping the deformation ac-
+curacy due to moving along the direction of target normals.
+We further assess the inﬂuence of the anchor number.
+Table 2 reports the results obtained by using 20, 80, 160
+and 320 anchors, respectively. One can see that using more
+anchors to guide the mesh deformation obtains better re-
+sults on all three metrics because the decomposition for the
+mesh deformation by using the rigid anchor transformations
+makes the nonlinear deformation can be more easily pre-
+dicted as the small displacements in the canonical space
+without considering large rotations and translations caused
+by the body pose which has been handled by the anchor
+transformations. However, the performance drops as the
+number of anchors continues to increases because too many
+transformation parameters lead to unstable forecasts during
+testing. Fig. 7 shows the qualitative comparison. Using 160
+anchors produces ﬁner and more accurate deformation com-
+pared with other anchor numbers. Using 20 anchors only re-
+cover the contour of the deformed mesh, and using 80 and
+320 anchors fail to obtain realistic deformation.
+Fig. 8 shows some examples of our AnchorDEF for dy-
+namic garment deformation in motion. Given a body mo-
+tion sequence, our method can produce natural and realis-
+tic clothing dynamics, e.g., wrinkles from jumping and the
+swing of the dress caused by running.
+4.2. Comparison with Related Methods
+We compare our method against related 3D garment de-
+formation methods, including TailorNet [27] and Virtual-
+Bones [26] on different types of garments.
+As reported
+in Table 3, our AnchorDEF achieves the best results in all
+cases. Fig. 9 presents the qualitative comparison. Tailor-
+7
+
+
+===== PAGE 8 =====
+
+Methods
+Dress
+T-shirt
+RMSE ↓
+Hausdorff ↓
+STED ↓
+RMSE ↓
+Hausdorff ↓
+STED ↓
+TailorNet [27]
+22.95
+76.80
+0.0757
+9.90
+27.02
+0.0418
+VirtualBones [26]
+19.91
+83.39
+0.0722
+10.52
+31.51
+0.0452
+AnchorDEF
+16.05
+74.20
+0.0493
+6.25
+26.31
+0.0262
+Table 3. Quantitative results of 3D garment deformation methods for different types of garments.
+TailorNet
+VirtualBones
+AnchorDEF
+Ground truth
+TailorNet
+VirtualBones
+AnchorDEF
+Ground truth
+(a)
+(b)
+Figure 9. Qualitative comparison of 3D garment deformation methods for different types of garments, including TailorNet [27], Virtual-
+Bones [26] and Our AnchorDEF. With the learned anchor transformations, our method not only recovers large deformations of the dress
+but also produces ﬁne surface details on the T-shirt.
+Net [27] recovers folds on the T-shirt, but it fails to ad-
+dress the deformation of the dress which has different topol-
+ogy from human body. By interpolating the skinning blend
+weights, it alleviates the discontinuity of blend weights bor-
+rowed from the SMPL [21] body. However, this makes Tai-
+lorNet only produce the outline of shapes with some folds
+missing and artifacts for large deformations of loose-ﬁtting
+garments. VirtualBones [26] can estimate large deforma-
+tions of the dress by using SSDR [18] to extract virtual
+bones of garments. However, it tends to keep the original
+folds of the dress template on the deformed mesh and can-
+not estimate well new folds generated by body motions on
+the T-shirt. VirtualBones needs SSDR to extract the gar-
+ment skeleton and gets blend weights of bones in advance
+and ﬁxes the bone position and blend weights during net-
+work training. Moreover, SSDR is performed on the low-
+frequency mesh sequences processed by Laplacian smooth-
+ing because it fails to address high-frequency garment de-
+formations. Thus, the learned virtual bones are not nec-
+essarily optimal. In contrast, by jointly learning the rigid
+transformations, blend weights and positions of anchors,
+our AnchorDEF not only recovers large deformations of the
+dress but also produces ﬁne surface details on the T-shirt.
+More qualitative results can be found in the supplemental
+materials.
+5. Conclusions
+We present AnchorDEF, an anchor based deformation
+model, to predict 3D garment animation given a body mo-
+tion sequence. With a set of anchors around the mesh sur-
+face, the garment deformation can be decomposed into a
+mixture of rigid anchor transformations and extra per-vertex
+displacements in a canonical space.
+The transformation
+consistency learning is introduced to guarantee the physical
+meaning of learned anchor transformations in space. Taking
+mesh simpliﬁcation as supervision, we further optimize the
+anchor position for learning representative anchor transfor-
+mations by making the anchor aware of local mesh topology
+with an attention mask. Extensive experiments on different
+types of garments demonstrate that AnchorDEF can effec-
+tively predict 3D garment deformation in motion for both
+tight and loose-ﬁtting garments.
+Limitations. Compared with the PBS methods, our method
+still lacks ﬁne-level dynamics. Better exploiting the tempo-
+ral information for the network architecture and supervision
+signals is a good direction for future work.
+Acknowledgments.
+This work was partly supported by
+the National Natural Science Foundation of China (Nos.
+62276134).
+8
+
+
+===== PAGE 9 =====
+
+References
+[1] David Baraff and Andrew Witkin. Large steps in cloth sim-
+ulation. In Proceedings of the 25th annual conference on
+Computer graphics and interactive techniques, 1998. 2
+[2] Hugo Bertiche, Meysam Madadi, and Sergio Escalera.
+Cloth3d: clothed 3d humans. In Proceedings of the Euro-
+pean conference on computer vision (ECCV), 2020. 2
+[3] Hugo Bertiche, Meysam Madadi, and Sergio Escalera. Pbns:
+Physically based neural simulator for unsupervised garment
+pose space deformation. arXiv preprint arXiv:2012.11310,
+2020. 2
+[4] Hugo Bertiche, Meysam Madadi, Emilio Tylson, and Ser-
+gio Escalera. Deepsd: Automatic deep skinning and pose
+space deformation for 3d garment animation. In Proceedings
+of the IEEE/CVF International Conference on Computer Vi-
+sion, 2021. 1, 2, 3
+[5] Lan Chen, Juntao Ye, Liguo Jiang, Chengcheng Ma,
+Zhanglin Cheng, and Xiaopeng Zhang. Synthesizing cloth
+wrinkles by cnn-based geometry image superresolution.
+Computer Animation and Virtual Worlds, 2018. 1
+[6] Cheng Chi and Shuran Song. Garmentnets: Category-level
+pose estimation for garments via canonical space shape com-
+pletion. In Proceedings of the IEEE/CVF International Con-
+ference on Computer Vision (ICCV), 2021. 2
+[7] Kyunghyun Cho, Bart Van Merri¨enboer, Dzmitry Bahdanau,
+and Yoshua Bengio. On the properties of neural machine
+translation: Encoder-decoder approaches.
+arXiv preprint
+arXiv:1409.1259, 2014. 3
+[8] Edilson De Aguiar, Leonid Sigal, Adrien Treuille, and Jes-
+sica K Hodgins. Stable spaces for real-time clothing. ACM
+Transactions on Graphics (TOG), 2010. 2
+[9] Wei-Wen Feng, Yizhou Yu, and Byung-Uck Kim.
+A de-
+formation transformer for real-time cloth animation. ACM
+transactions on graphics (TOG), 2010. 1
+[10] Michael Garland and Paul S Heckbert. Surface simpliﬁcation
+using quadric error metrics. In Proceedings of the 24th an-
+nual conference on Computer graphics and interactive tech-
+niques, 1997. 5, 11
+[11] Peng Guan, Loretta Reiss, David A Hirshberg, Alexander
+Weiss, and Michael J Black. Drape: Dressing any person.
+ACM Transactions on Graphics (ToG), 2012. 1, 2
+[12] Erhan Gundogdu, Victor Constantin, Amrollah Seifoddini,
+Minh Dang, Mathieu Salzmann, and Pascal Fua. Garnet: A
+two-stream network for fast and accurate 3d cloth draping.
+In Proceedings of the IEEE/CVF International Conference
+on Computer Vision (ICCV), 2019. 1
+[13] David Harmon, Etienne Vouga, Breannan Smith, Rasmus
+Tamstorf, and Eitan Grinspun. Asynchronous contact me-
+chanics. In ACM SIGGRAPH 2009 papers. 2009. 2
+[14] Doyub Kim, Woojong Koh, Rahul Narain, Kayvon Fa-
+tahalian, Adrien Treuille, and James F O’Brien.
+Near-
+exhaustive precomputation of secondary cloth effects. ACM
+Transactions on Graphics (TOG), 2013. 2
+[15] Tae-Yong Kim and Eugene Vendrovsky.
+Drivenshape: a
+data-driven approach for shape deformation. In Proceedings
+of the 2008 ACM SIGGRAPH/Eurographics Symposium on
+Computer Animation, pages 49–55, 2008. 2
+[16] Diederik P Kingma and Jimmy Ba. Adam: A method for
+stochastic optimization.
+Proceedings of the International
+Conference on Learning Representations (ICLR), 2015. 11
+[17] Zorah Lahner, Daniel Cremers, and Tony Tung. Deepwrin-
+kles: Accurate and realistic clothing modeling. In Proceed-
+ings of the European conference on computer vision (ECCV),
+2018. 1
+[18] Binh Huy Le and Zhigang Deng. Smooth skinning decom-
+position with rigid bones. ACM Transactions on Graphics
+(TOG), 2012. 2, 4, 8
+[19] Cheng Li, Min Tang, Ruofeng Tong, Ming Cai, Jieyi Zhao,
+and Dinesh Manocha. P-Cloth: Interactive cloth simulation
+on multi-GPU systems using dynamic matrix assembly and
+pipelined implicit integrators. ACM Transaction on Graphics
+(Proceedings of SIGGRAPH Asia), 2020. 2
+[20] Yifei Li, Tao Du, Kui Wu, Jie Xu, and Wojciech Matusik.
+Diffcloth: Differentiable cloth simulation with dry frictional
+contact. ACM Transactions on Graphics (TOG), 2022. 2
+[21] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard
+Pons-Moll, and Michael J Black. Smpl: A skinned multi-
+person linear model. ACM transactions on graphics (TOG),
+2015. 3, 8
+[22] Micka¨el Ly, Jean Jouve, Laurence Boissieux, and Florence
+Bertails-Descoubes. Projective dynamics with dry frictional
+contact. ACM Transactions on Graphics (TOG), 2020. 2
+[23] Qianli Ma, Jinlong Yang, Michael J. Black, and Siyu Tang.
+Neural point-based shape modeling of humans in challeng-
+ing clothing. In 2022 International Conference on 3D Vision
+(3DV), 2022. 2
+[24] Matthias M¨uller, Nuttapong Chentanez, Tae-Yong Kim, and
+Miles Macklin.
+Air meshes for robust collision handling.
+ACM Transactions on Graphics (TOG), 2015. 2
+[25] Rahul Narain, Armin Samii, and James F O’brien. Adaptive
+anisotropic remeshing for cloth simulation. ACM transac-
+tions on graphics (TOG), 2012. 7
+[26] Xiaoyu Pan, Jiaming Mai, Xinwei Jiang, Dongxue Tang,
+Jingxiang Li, Tianjia Shao, Kun Zhou, Xiaogang Jin, and
+Dinesh Manocha.
+Predicting loose-ﬁtting garment defor-
+mations using bone-driven motion networks. In ACM SIG-
+GRAPH Conference Proceedings, 2022. 1, 2, 4, 6, 7, 8, 11
+[27] Chaitanya Patel, Zhouyingcheng Liao, and Gerard Pons-
+Moll. Tailornet: Predicting clothing in 3d as a function of
+human pose, shape and garment style.
+In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2020. 1, 2, 3, 6, 7, 8, 11
+[28] Tobias Pfaff, Meire Fortunato, Alvaro Sanchez-Gonzalez,
+and Peter W. Battaglia.
+Learning mesh-based simulation
+with graph networks. In International Conference on Learn-
+ing Representations, 2021. 1
+[29] Gerard Pons-Moll, Sergi Pujades, Sonny Hu, and Michael J
+Black. Clothcap: Seamless 4d clothing capture and retarget-
+ing. ACM Transactions on Graphics (ToG), 2017. 1
+[30] Xavier Provot. Collision and self-collision handling in cloth
+model dedicated to design garments. In Computer Animation
+and Simulation’97, pages 177–189. Springer, 1997. 2
+[31] Albert Pumarola, Jordi Sanchez-Riera, Gary Choi, Alberto
+Sanfeliu, and Francesc Moreno-Noguer.
+3dpeople: Mod-
+eling the geometry of dressed humans. In Proceedings of
+9
+
+
+===== PAGE 10 =====
+
+the IEEE/CVF international conference on computer vision,
+pages 2242–2251, 2019. 2
+[32] Igor Santesteban, Miguel A. Otaduy, and Dan Casas.
+Learning-Based Animation of Clothing for Virtual Try-On.
+Computer Graphics Forum (Proc. Eurographics), 2019. 1,
+2, 3, 6
+[33] Igor Santesteban, Miguel A Otaduy, and Dan Casas. SNUG:
+Self-Supervised Neural Dynamic Garments.
+IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 2022. 2
+[34] Igor Santesteban, Miguel A. Otaduy, Nils Thuerey, and Dan
+Casas. ULNeF: Untangled layered neural ﬁelds for mix-and-
+match virtual try-on. In Advances in Neural Information Pro-
+cessing Systems, (NeurIPS), 2022. 2
+[35] Igor Santesteban, Nils Thuerey, Miguel A Otaduy, and Dan
+Casas.
+Self-supervised collision handling via generative
+3d garment models for virtual try-on.
+In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2021. 1, 2
+[36] Min Tang, Huamin Wang, Le Tang, Ruofeng Tong, and Di-
+nesh Manocha.
+CAMA: Contact-aware matrix assembly
+with uniﬁed collision handling for GPU-based cloth simula-
+tion. Computer Graphics Forum (Proceedings of Eurograph-
+ics 2016), 35(2):511–521, 2016. 2
+[37] Libor Vasa and Vaclav Skala. A perception correlated com-
+parison method for dynamic meshes. IEEE transactions on
+visualization and computer graphics (TVCG), 2010. 6
+[38] Tuanfeng Y Wang, Tianjia Shao, Kai Fu, and Niloy J Mitra.
+Learning an intrinsic garment space for interactive author-
+ing of garment animation. ACM Transactions on Graphics
+(TOG), 2019. 2
+[39] Ilya Zakharkin, Kirill Mazur, Artur Grigorev, and Victor
+Lempitsky.
+Point-based modeling of human clothing.
+In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision (ICCV), 2021. 2
+[40] Meng Zhang, Tuanfeng Y Wang, Duygu Ceylan, and Niloy J
+Mitra.
+Dynamic neural garments.
+ACM Transactions on
+Graphics (TOG), 2021. 2
+[41] Fang Zhao, Wenhao Wang, Shengcai Liao, and Ling Shao.
+Learning anchored unsigned distance functions with gradient
+direction alignment for single-view garment reconstruction.
+In Proceedings of the IEEE/CVF International Conference
+on Computer Vision (ICCV), 2021. 1
+10
+
+
+===== PAGE 11 =====
+
+Supplemental Materials
+In the supplemental materials, we present additional de-
+tails on training and inference procedures and more qualita-
+tive results and comparisons.
+A. Training and Inference
+For training, we adopt the Adam optimizer [16] with an
+initial learning rate of 1e-3. The batch size is 8 and the
+number of epochs is 50. The learning rate is lowered to
+1e-4 after 30 epochs. Empirically the weights λ1, λ2 and
+λ3 of the overall objective function are set to 1, 0.01 and
+100, respectively. The weight factor γ in the transformation
+consistency loss is set to 0.1. The Laplacian and collision
+coefﬁcients in the vertex loss are set to 0.2 and 1, respec-
+tively. At the beginning of training, we optimize the ob-
+jective function without the collision term and the direction
+penalty term and add these two terms in the last 10 epochs
+while recalculating the anchor-vertex relationships accord-
+ing to the new anchor positions.
+Fig. 10 shows the structure of the network for estimating
+anchor transformations and per-vertex displacements in the
+canonical space. For the i-th frame, the body pose θi and
+translation ti are concatenated and fed into the GRU layers.
+Anchor rotations and translations [Ri; Ti] and per-vertex
+displacements Di are produced respectively by MLPs con-
+sisting of two fully-connected (FC) layers, where the ﬁrst
+FC layer is followed by the PReLU activation. The anchor
+rotation is predicted as Euler angles by the network and then
+is converted to a rotation matrix. The initial state h0 of each
+GRU layer is sampled from a normal distribution with mean
+zero and standard deviation 0.1. At inference, the initial
+state is set to zero and the model can be applied to motion
+sequences of arbitrary length.
+Meshes simpliﬁed by Quadric Error Metric (QEM) [10]
+are illustrated in Fig. 11, which are used as the supervi-
+sion for the adaptive anchor updating. These meshes pre-
+serve intrinsic geometric structures of the surface, e.g., folds
+and boundaries, which provide key topology information to
+learn representative anchors.
+All compared models are trained using the hyper-
+parameters described in their papers. For TailorNet [27],
+we use the training code provided by its authors. Virtu-
+alBones [26] only releases the inference code, thus we re-
+implement the training code according to its inference code.
+B. More Results
+Please refer to https://semanticdh.github.
+io/AnchorDEF for examples of our AnchorDEF for dy-
+namic garment deformation in motion and qualitative com-
+parison of our AnchorDEF with other 3D garment deforma-
+tion methods [26,27]. As shown in the demo video, given a
+body motion sequence which is unseen during training, our
+[𝜃i; ti]
+Di
+GRU
+GRU
+FC
+FC
+FC
+FC
+hi-1
+hi-1
+hi
+hi
+h0
+h0
+...
+...
+[Ri; Ti]
+PReLU
+PReLU
+Figure 10. Structure of the network for estimating anchor rotations
+and translations [Ri; Ti] and per-vertex displacements Di in the
+canonical space.
+Simplified
+Original
+Simplified
+Original
+Figure 11. Visualization of simpliﬁed meshes used as the supervi-
+sion for the adaptive anchor updating.
+Figure 12. Failure cases for some extreme poses where garment-
+body interpenetration may appear.
+method can produce natural and realistic clothing dynam-
+ics and the garment deformation closer to the ground truth
+compared with other methods.
+Some failure cases are shown in Fig. 12. Garment-body
+interpenetration may appear for some extreme poses. Pre-
+venting or reducing such garment-body interpenetration is
+a future research direction.
+11

@@ -1,0 +1,1081 @@
+
+
+===== PAGE 1 =====
+
+TailorNet: Predicting Clothing in 3D as a Function of Human Pose, Shape and
+Garment Style
+Chaitanya Patel∗
+Zhouyingcheng Liao∗
+Gerard Pons-Moll
+Max Planck Institute for Informatics, Saarland Informatics Campus, Germany
+{cpatel, zliao, gpons}@mpi-inf.mpg.de
+Figure 1: We present TailorNet, a model to estimate the clothing deformations with ﬁne details from input body shape, body
+pose and garment style. From the left: the ﬁrst two avatars show two different styles on the same shape, the following two
+show the same two styles on another shape, and the last two avatars illustrate that our method works for different garments.
+Abstract
+In this paper, we present TailorNet, a neural model which
+predicts clothing deformation in 3D as a function of three
+factors: pose, shape and style (garment geometry), while
+retaining wrinkle detail. This goes beyond prior models,
+which are either speciﬁc to one style and shape, or general-
+ize to different shapes producing smooth results, despite be-
+ing style speciﬁc. Our hypothesis is that (even non-linear)
+combinations of examples smooth out high frequency com-
+ponents such as ﬁne-wrinkles, which makes learning the
+three factors jointly hard. At the heart of our technique
+is a decomposition of deformation into a high frequency
+and a low frequency component. While the low-frequency
+component is predicted from pose, shape and style param-
+eters with an MLP, the high-frequency component is pre-
+dicted with a mixture of shape-style speciﬁc pose models.
+The weights of the mixture are computed with a narrow
+bandwidth kernel to guarantee that only predictions with
+similar high-frequency patterns are combined. The style
+variation is obtained by computing, in a canonical pose,
+a subspace of deformation, which satisﬁes physical con-
+straints such as inter-penetration, and draping on the body.
+TailorNet delivers 3D garments which retain the wrinkles
+∗Equal contribution.
+from the physics based simulations (PBS) it is learned from,
+while running more than 1000 times faster. In contrast to
+classical PBS, TailorNet is easy to use and fully differen-
+tiable, which is crucial for computer vision and learning al-
+gorithms. Several experiments demonstrate TailorNet pro-
+duces more realistic results than prior work, and even gen-
+erates temporally coherent deformations on sequences of
+the AMASS [34] dataset, despite being trained on static
+poses from a different dataset.
+To stimulate further re-
+search in this direction, we will make a dataset consisting
+of 55800 frames, as well as our model publicly available at
+https://virtualhumans.mpi-inf.mpg.de/tailornet/.
+1. Introduction
+Animating digital humans in clothing has numerous ap-
+plications in 3D content production, games, entertainment
+and virtual try on. The predominant approach is still physics
+based simulation (PBS). However, the typical PBS pipeline
+requires editing the garment shape in 2D with patterns,
+manually placing it on the digital character and ﬁne tuning
+parameters to achieve desired results, which is laborious,
+time consuming and requires expert knowledge. Moreover,
+high quality PBS methods are computationally expensive,
+complex to implement and to control, and are not trivially
+1
+arXiv:2003.04583v2  [cs.CV]  15 Mar 2020
+
+
+===== PAGE 2 =====
+
+differentiable. For computer vision tasks, generative mod-
+els of clothed humans need to be differentiable, easy to de-
+ploy, and should be easy to integrate within CNNs, and to
+ﬁt them to image and video data.
+In order to make animation easy, several works learn
+efﬁcient approximate models from PBS complied off-line.
+At least three factors inﬂuence clothing deformation: body
+pose, shape and garment style (by style we mean the gar-
+ment geometry). Existing methods either model deforma-
+tion due to pose [10, 29] for a ﬁxed shape, shape and
+pose [46, 18] for a ﬁxed style, or style [58] for a ﬁxed
+pose. The aforementioned methods inspire our work; how-
+ever, they do not model the effects of pose, shape and style
+jointly, even though they are intertwined.
+Different gar-
+ments deform differently as a function of pose and shape,
+and garment speciﬁc models [46, 29, 17, 10] (1 style) have
+limited use. Furthermore, existing joint models of pose and
+shape [17, 8, 18] often produce over-smooth results (even
+for a ﬁxed style), and they are not publicly available. Con-
+sequently, none of existing approaches has materialized in
+a model which can be used to solve computer vision and
+graphics problems.
+What is lacking is a uniﬁed model capable of generating
+different garment styles, and animating them on any body
+shape in any pose, while retaining wrinkle detail. To that
+end, we introduce TailorNet, a mixture of Neural Networks
+(NN) learned from physics based simulations, which de-
+composes clothing deformations into style, shape and pose
+– this effectively approximates the physical clothing defor-
+mation allowing intuitive control of synthesized animations.
+In the same spirit as SMPL [32] for bodies, TailorNet learns
+deformations as a displacements to a garment template in
+a canonical pose, while the articulated motion is driven by
+skinning. TailorNet can either take a real garment as input,
+or generate it from scratch, and drape it on top of the SMPL
+body for any shape and pose. In contrast to [17], our model
+predicts how the garment would ﬁt in reality, e.g., a medium
+size garment is predicted tight on a large body, and loose on
+a thin body.
+Learning TailorNet required addressing several techni-
+cal challenges. To generate different garment styles in a
+static pose, we compute a PCA subspace using the pub-
+licly available digital wardrobe of real static garments [6].
+To generate more style variation while satisfying garment-
+human physical constraints, we sample from the PCA sub-
+space, run PBS for each sample, and recompute PCA again,
+to obtain a static style subspace. Samples from this sub-
+space produce variation in sleeve length, size and ﬁt in a
+static pose. To learn deformation as a function of pose and
+shape, we generated a semi-real dataset by animating gar-
+ments (real or samples from the static style subspace) using
+PBS on top of SMPL [32] body for static SMPL poses, and
+for different shapes.
+Our ﬁrst observation is that, for a ﬁxed style (garment in-
+stance) and body shape, predicting high frequency clothing
+deformations as a function of pose is possible – perhaps sur-
+prisingly, our experiments show that, for this task, a simple
+multi-layer perceptron model (MLP) performs as well as
+or better than Graph Neural Networks [31, 28] and Image-
+decoder on a UV-space [29]. In stark contrast, straightfor-
+ward prediction of deformation as a function of style, shape
+and pose results in overly smooth un-realistic results. We
+hypothesize that any attempt to combine training examples
+smoothes out high frequency components, which explains
+why previous models [46, 17, 18], even for a single style,
+lack ﬁne scale wrinkles and folds.
+These key observations motivate the design of TailorNet:
+we predict the clothing low frequency geometry with a sim-
+ple MLP. High frequency geometry is predicted with a mix-
+ture of high frequency style-shape speciﬁc models, where
+each speciﬁc model consists of a MLP which predicts de-
+formation as a function of pose, and the weights of the mix-
+ture are obtained using a kernel which evaluates similarity
+in style and shape. A kernel with a very narrow bandwidth,
+prevents smoothing out ﬁne scale wrinkles. Several experi-
+ments demonstrate that our model generalizes well to novel
+poses, predicts garment ﬁt dependent on body shape, retains
+wrinkle detail, can produce style variations for a garment
+category (e.g., for T-shirts it produces different sizes, sleeve
+lengths and ﬁt type), and importantly is easy to implement
+and control. To summarize, the main contributions of our
+work are:
+• The ﬁrst joint model of clothing style, pose and shape
+variation, which is simple, easy to deploy and fully dif-
+ferentiable for easy integration with deep learning.
+• A simple yet effective decomposition of mesh de-
+formations into low and high-frequency components,
+which coupled with a mixture model, allows to retain
+high-frequency wrinkles.
+• A comparison of different methods (MLP, Graph Neu-
+ral Nets and image-to-image translation on UV-space)
+to predict pose dependent clothing deformation.
+• To stimulate further research, we make available a
+Dataset of 20 aligned real static garments, simulated in
+1782 poses, for 9 body shapes, totaling 55800 frames.
+Several experiments show that our model generalizes to
+completely new poses of the AMASS dataset (even though
+we did not use AMASS to train our model), and produces
+variations due to pose, shape and style, while being more
+detailed than previous style speciﬁc models [46, 18]. Fur-
+thermore, despite being trained on static poses, TailorNet
+produces smooth continuous animations.
+
+
+===== PAGE 3 =====
+
+2. Related Work
+There are two main approaches to animation of clothing:
+physics based simulation (PBS), and efﬁcient data-driven
+models learned from ofﬂine PBS, or real captures.
+Physics Based Simulation (PBS).
+Super realistic anima-
+tions require simulating millions of triangles [53, 47, 22],
+which is computationally expensive.
+Many works focus
+on making simulation efﬁcient [16] by adding wrinkles to
+low-resolution simulations [15, 25, 26, 55], or using sim-
+pler mass-spring models [43] and position based dynam-
+ics [38, 37] compromising accuracy and physical correct-
+ness for speed. Tuning the simulation parameters is a te-
+dious task that can take weeks. Hence, several authors at-
+tempted to infer physical parameters mechanically [35, 57],
+from multi-view video [45, 62, 50], or from perceptual
+judgments of humans [49], but they only work in controlled
+settings and still require running PBS. PBS approaches typ-
+ically require designing garments in 2D, grading them, ad-
+justing them to the 3D body, and ﬁne tuning parameters,
+which can take hours if not weeks, even for trained experts.
+Data-driven cloth models.
+One way to achieve realism
+is to capture real clothing on humans from images [6, 5, 3,
+4, 19], dynamic scans [41, 39] or RGBD [52, 51] and re-
+target it to novel shapes, but this is limited to re-animating
+the same motion on a novel shape. While learning pose-
+dependent models from real captures [61, 29, 33] is def-
+initely an exciting route, accurately capturing sufﬁcient
+real data is still a major challenge.
+Hence, these mod-
+els [61, 29, 33] only demonstrate generalization to motions
+similar to the training data.
+Another option is to generate data with PBS, and learn
+efﬁcient data-driven models. Early methods relied on linear
+auto-regression or efﬁcient nearest neighbor search to pre-
+dict pose [10, 26, 56], or pose and shape dependent clothing
+deformation [17]. Recent ones are based on deep learning,
+and vary according to the factor modeled (style or pose and
+shape), the data representation, and architecture used. Style
+variation is predicted from a user sketch with a VAE [58] but
+the pose is ﬁxed. For a single style, pose and shape variation
+is regressed with MLPs and RNNs [46, 61], or Graph-NNs
+that process body and garment [18]. Pose effects are pre-
+dicted with a normal map [29] or a displacement map [23] in
+UV-space. These models [10, 18, 17] tend to produce over-
+smooth results, with the exception of [29], but the model is
+trained for a single garment and subject, and as mentioned
+before generalization to in the wild motions (for example
+CMU [11]) is not demonstrated. Since there is no consen-
+sus on what representation and learning model is best suited
+for this task, for a ﬁxed style and shape, we compare repre-
+sentations and architectures, and ﬁnd that MLPs perform as
+well as more sophisticated Graph-NNs or image-to-image
+translation on UV-space. While we draw inspiration from
+previous works, unlike our model, none of them can jointly
+model style, pose and shape variation.
+Pixel based models.
+An alternative to 3D cloth modeling
+is to retrieve and warp images and videos [60, 9]. Recent
+methods use deep learning to generate pixels [20, 14, 13,
+63, 65, 67, 21, 44, 54, 66], often guided by 2D warps, or
+smooth 3D models [30, 64, 59, 48], or learn to transfer tex-
+ture from cloth images to 3D models [36]. They produce
+(at best) photo-realistic images in controlled settings, but do
+not capture the 3D shape of wrinkles, cannot easily control
+motion, view-point, illumination, shape and style.
+3. Garment Model Aligned with SMPL
+Our base garment template is aligned with SMPL [32] as
+done in [41, 6]. SMPL represents the human body M(·) as
+a parametric function of pose(θ) and shape(β)
+M(β, θ) = W(T(β, θ), J(β), θ, W)
+(1)
+T(β, θ) = T + Bs(β) + Bp(θ).
+(2)
+composed of a linear function T(β, θ) which adds displace-
+ments to base mesh vertices T ∈Rn×3 in a T-pose, fol-
+lowed by learned skinning W(·). Speciﬁcally, Bp(·) adds
+pose-dependent deformations, and Bs(·) adds shape depen-
+dent deformations. W are the blend weights of a skeleton
+J(·).
+We obtain the garment template topology as a submesh
+(with vertices TG ∈Rm×3) of the SMPL template, with
+vertices T. Formally, the indicator matrix I ∈Zm×n eval-
+uates to Ii,j = 1 if garment vertex i ∈{1 . . . m} is associ-
+ated with body shape vertex j ∈{1 . . . n}. The particular
+garment style draped over M(β, θ) in a 0-pose is encoded
+as displacements D over the unposed body shape T(θ, β).
+Since the garment is associated with the underlying SMPL
+body, previous works [6, 41] deform every clothing vertex
+with its associated SMPL body vertex function. For a given
+style D, shape β and pose θ, they deform clothing using the
+un-posed SMPL function Tθ, β)
+T G(β, θ, D) = I T(β, θ) + D,
+(3)
+followed by the SMPL skinning function in Eq. 1
+G(β, θ, D) = W(T G(β, θ, D), J(β), θ, W).
+(4)
+Since D is ﬁxed, this assumes that clothing deforms in the
+same way as the body, which is a practical but clearly over-
+simplifying assumption. Like previous work, we also de-
+compose deformation as a non-rigid component (Eq. 3) and
+an articulated component (Eq. 3), but unlike previous work,
+we learn non-rigid deformation D as a function of pose,
+style and shape. That is, we learn true clothing variations as
+we explain in the next section.
+
+
+===== PAGE 4 =====
+
+Low Frequency Prediction
+High Frequency for (β1, 𝛾1)
+𝜃
+β
+𝛾
+Mixture of 
+High 
+Frequencies
+High Frequency for (β2, 𝛾2)
+High Frequency for (βK, 𝛾K)
+Skinning
+Draping
+Figure 2. Overview of our model to predict the draped garment with style γ on the body with pose θ and shape β. Low frequency of
+the deformations are predicted using a single model. High frequency of pose dependent deformations for K prototype shape-style pairs
+are separately computed and mixed using a RBF kernel to get the ﬁnal high frequency of the deformations. The low and high frequency
+predictions are added to get the unposed garment output, which is posed to using standard skinning to get the garment.
+Method
+Static/Dynamic
+Pose
+Shape
+Style
+Model
+Dataset
+Variations
+Variations
+Variations
+Public
+Public
+Santesteban et al. [46]
+Dynamic
+
+
+
+
+
+Wang et al. [58]
+Static
+
+
+
+
+
+DeepWrinkles [29]
+Dynamic
+
+
+
+
+
+DRAPE [17]
+Dynamic
+
+
+
+
+
+GarNet [18]
+Static
+
+
+
+
+
+Ours
+Static
+
+
+
+
+
+Table 1. Comparison of our method with other works. Ours is the ﬁrst method to model the garment deformations as a function of pose,
+shape and style. We also make our model and dataset public for further research.
+4. Method
+In this section, we describe our decomposition of cloth-
+ing as non-rigid deformation (due to pose, shape and style)
+and articulated deformation, which we refer to as un-posing
+(Section 4.1). The ﬁrst component of our model is a sub-
+space of garment styles which generates variation in A-
+pose (Section 4.2). As explained in the introduction, pose-
+models speciﬁc to a ﬁxed shape and style (explained in
+Section 4.3), do preserve high-frequencies, but models that
+combine different styles and shapes produce overly smooth
+results. Hence, at the heart of our technique is a model,
+which predicts low frequency with a straight-forward MLP,
+and high-frequency with a mixture model Sections 4.2–4.4.
+An overview of our method is shown in Fig. 2.
+4.1. Un-posing Garment Deformation
+Given a set of simulated garments G for a given pose
+θ and shape β, we ﬁrst disentangle non-rigid deformation
+from articulation by un-posing – we invert the skinning
+W(·) function
+D = W −1(G, J(β), θ, W) −I T(β, θ),
+(5)
+and subtract the body shape in a canonical pose, obtain-
+ing un-posed non-rigid deformation D as displacements
+from the body.
+Since joints J(·) are known, computing
+W −1(·) in Eq. 5 entails un-posing every vertex ˆvj
+=
+(P
+k Wk,jHk(θ, J(β)))−1vj,
+where Hk(θ, J(β))
+∈
+SE(3) are the part transformation matrices, and ˆvj ∈R3
+is the un-posed vertex. Non-rigid deformation D in the un-
+posed space is affected by body pose, shape and the garment
+style (size, sleeve length, ﬁt). Hence, we propose to learn
+deformation D as a function of shape β, pose θ and style γ,
+i.e. D(β, θ, γ) : R|θ| × R|β| × R|γ| 7→Rm×3. The model
+should be realistic, easy to control and differentiable.
+4.2. Generating Parametric Model of Style
+We generate style variation γ in A-pose by computing
+a PCA subspace using the public 3D garments of [6]. Al-
+
+
+===== PAGE 5 =====
+
+though the method of Bhatnagar et al. [6] allows to transfer
+the 3D garment to a body shape in a canonical pose and
+shape ({G(θ0, β0, Di)}), physical constraints might be vi-
+olated – garments are sometimes slightly ﬂying on top of
+the body, and wrinkles do not correspond to an A-pose.
+In order to generate style variation while satisfying physics
+constraints, we alternate sampling form the PCA space and
+running PBS on the samples. We already ﬁnd good results
+alternating PBS and PCA two times, to obtain a sub-space
+of style variation in a static A-pose – with PCA coefﬁcients
+γ. Fig. 3 shows the parametric style space for t-shirt. This
+is however, a model in a ﬁxed A-pose and shape. Different
+garment styles will deform differently as a function of pose
+and shape. In Section 4.3 we explain our style-shape spe-
+ciﬁc model of pose, and in Section 4.4 we describe our joint
+mixture model for varied shapes and styles.
+4.3. Single Style-Shape Model
+For a ﬁxed garment style γ and a ﬁxed body shape β pair,
+denoted as φ = (γ, β) ∈X, we take paired simulated data
+of body poses and garment displacements {(θi, Dφ
+i )} ,com-
+puted according to Eq. 5, and train a model Dφ : R|θ| −→
+Rm×3 to predict pose dependent displacements. In partic-
+ular, we train Dφ using a multi-layer perceptron(MLP) to
+minimize the L1-loss between the predicted displacements
+Dφ(θi) and the ground-truth displacements Dφ
+i . We ob-
+serve that Dφ predicts reasonable garment ﬁt along with
+ﬁne-scale wrinkles and generalizes well to unseen poses,
+but this model is speciﬁc to a particular shape and style.
+4.4. TailorNet
+For the sake of simplicity, it is tempting to directly
+regress all non-rigid clothing deformations as function of
+pose, shape and style jointly, i.e., learning D(θ, φ) : R|θ| ×
+X 7→Rm×3 directly with an MLP. However, our experi-
+ments show that, while this produces accurate predictions
+quantitatively, qualitatively results are overly smooth lack-
+ing realism. We hypothesize that any attempt to combine
+geometry of many samples with varying high frequency
+(ﬁne wrinkles) smoothes out the details. This might be a po-
+tential explanation for the smooth results obtained in related
+works [46, 18, 17] – even for single style models. Our idea
+is to decompose garment mesh vertices, in an unposed space
+ˆG = W −1(G, J(β), θ, W), into a smooth low-frequency
+shape ˆGLF , and a high frequency shape ˆGHF with diffu-
+sion ﬂow. Let f(x, t) : G 7→R be a function on the garment
+surface, then it is smoothed with the diffusion equation:
+∂f(x, t)
+∂t
+= λ∆f(x, t)
+(6)
+which states that the function changes over time by a scalar
+diffusion coefﬁcient λ times its spatial Laplacian ∆f. In or-
+der to smooth mesh geometry, we apply the diffusion equa-
+Figure 3. Overview of T-shirt style space. First component(top)
+and second component(middle) changes the overall size and the
+sleeve length respectively. Sampling from this style space gener-
+ates a wide range of T-shirt styles (bottom). For the ﬁrst two rows,
+corresponding components are −1.5σ, 0, 1.5σ from left to right.
+tion to the vertex coordinates gi ∈ˆG (which are interpreted
+as a discretized function on the surface)
+gi = gi + λ∆gi,
+(7)
+where ∆gi is the discrete Laplace-Beltrami operator ap-
+plied at vertex gi, and λ and the number of iterations control
+the level of smoothing. Eq. 7 is also known as Laplacian
+smoothing [12, 7]. We use λ = 0.15 and 80 iterations,
+to obtain a smooth low-frequency mesh ˆGLF and a high-
+frequency residual ˆGHF = ˆG −ˆGLF . We then subtract
+the body shape IT(β, θ) as in Eq. 5, and predict displace-
+ment components separately as
+D(θ, φ) = DLF (θ, φ) +
+K
+X
+k=1
+Ψ(φ, φk)DHF
+φ,k (θ),
+(8)
+where the low-frequency component is predicted with an
+MLP DLF (θ, φ) (smooth but accurate), whereas the high
+frequency component is predicted with a mixture of style-
+shape φ = (γ, β) speciﬁc models of pose DHF
+φ
+(θ). As we
+show in the experiments, style-shape φ speciﬁc high fre-
+quency models retain details. We generalize to new shape-
+styles beyond the prototypes DHF
+φk (θ) with a convex com-
+bination of speciﬁc models. The mixture weights are com-
+puted with a kernel Ψ(φ1, φ2) : X × X 7→R with a narrow
+bandwidth to combine only similar wrinkle patterns
+Ψ(φ, φk) = exp
+
+−dist (g(φ), g(φk))
+σx
+
+,
+(9)
+
+
+===== PAGE 6 =====
+
+where g(φ) : X
+7→Rm×3 is a shallow MLP which
+maps from style-shape to the garment displacements D in a
+canonical A-pose. Ideally, the kernel should measure simi-
+larity in style and shape, but this would require simulating
+training data for every possible pose-shape-style combina-
+tion, which is inefﬁcient and resource intensive. Our key
+simplifying assumption is that two garments on two dif-
+ferent people will deform similarly if their displacements
+g(φ) = D to their respective bodies is similar – this mea-
+sures clothing ﬁt similarity. While this is an approximation,
+it works well in practice.
+The bandwidth σx is a free-parameter of our model, al-
+lowing to generate varying high-frequency detail. We ﬁnd
+qualitatively good results by keeping σx small in order to
+combine only nearby samples. We postprocess the output
+to remove the garment intersections with the body.
+Choosing K Style-Shape Prototypes
+For each chosen
+style-shape pair, we simulate a wide variety of poses, which
+is time consuming.
+Hence, we ﬁnd K prototype shape-
+styles φ such that they cover the space of static displace-
+ments in A-pose D(β, θ0, γ).
+Speciﬁcally, we want to
+choose K style-shape pairs such that any other shape-styles
+can be approximated as a convex combination of prototypes
+with least error – this is a non-convex problem with no
+global optimum guarantees. While iterative methods like K-
+SVD [2] might yield better coverage, here we use a simple
+but effective greedy approach to choose good prototypes.
+We take a dataset of X garments {D(θ0, φ)}i=1...X in
+different styles γi draped on different body shapes βi in
+canonical pose. We start with a pool of 9 body shapes in
+one common style and try to ﬁt each of the other style-shape
+pairs as a convex combination of this pool. Then we take the
+style-shape with the highest approximation error and add it
+to the pool. We repeat this process until we get the pool of
+K style-shape pairs. We ﬁnd all shape-styles can be well
+approximated when K ⩾20. Thus, we use K = 20 here.
+5. Dataset
+We learn our model from paired data of parameters and
+the garment which we obtained from simulation. We use a
+commercial 3D cloth design and simulation tool Marvelous
+Designer [1] to simulate these garments. Instead of design-
+ing and positioning garments manually, we use the publicly
+available digital wardrobe [6] captured from the real world
+data which includes variations in styles, shapes and poses.
+Although we describe our dataset generation with reference
+to T-shirt, method remains the same for all garments.
+5.1. Garments to Generate Styles
+We ﬁrst retarget [41] the 3D garments from the dig-
+ital wardrobe [6] to the canonical shape(β0) and slowly
+simulate them to canonical pose(θ0). We get the dataset
+{G(β0, θ0, Di)} of 43 garments to learn style-space as in
+Section 4.2. However, the learnt style-space may not be in-
+tuitive due to limited variation in the data, and may contain
+irregular patterns and distortions owing to the registration
+process. So we sample 300 styles from this PCA model,
+simulate them again to get a larger dataset with less distor-
+tions. With 2 iterations of PCA and simulation, we generate
+consistent and meaningful style variations. We ﬁnd ﬁrst 2
+PCA components enough to represent γ parameters. See
+Figure 3.
+5.2. Shape, Pose and Style Variations
+We choose 9 shapes manually as follows. We sample the
+ﬁrst two shape components β at 4 equally spaced intervals,
+while leaving the other components to zero. To these 4 ×
+2 = 8 shapes, we add canonical zero shape β0. We choose
+25 styles in a similar way - by sampling the ﬁrst two sytle
+γ components.
+We simulate all combinations of shapes and styles in
+canonical pose, which results in 25 × 9 = 225 instances.
+We choose 20 prototypes out of 225 style-shape pairs as
+training style-shape pairs using the approach mentioned in
+Section 4.4. We randomly choose 20 more style-shape pairs
+for testing.
+5.3. Simulation details
+For pose variations, we use 1782 static SMPL poses, in-
+cluding a wide range of poses, including extreme ones. For
+a given style-shape φk and poses {θi}, we simulate them
+in one sequence. The body starts with canonical pose and
+greedily transitions to the nearest pose until all poses are
+traversed. To avoid dynamic effects (in this paper we are
+interested in quasi static deformation), we insert linearly in-
+terpolated intermediate poses, and let the garment relax for
+few frames. PBS simulation fails sometimes, and hence we
+remove frames with self-interpenetration from the dataset.
+For training style-shape pairs, we simulate SMPL poses
+with interpolated poses. For testing style-shape pairs, we
+simulate a subset of SMPL poses with a mix of seen and
+unseen poses. Finally, we get 4 splits as follows: (1) train-
+train : 20 training style-shape pairs each with 2600 train-
+ing poses. (2) train-test : 20 training style-shape pairs each
+with 179 unseen poses. (3) test-train : 20 testing style-shape
+pairs each with 35 training poses. (4) test-test : 20 testing
+style-shape pairs each with 131 unseen poses.
+6. Experiments
+We evaluate our method on T-Shirt quantitatively and
+qualitatively and compare it to our baseline, and previous
+works. Our baseline and TailorNet use several MLPs - each
+of them has two hidden layers with ReLU activation and
+a dropout layer. We arrive to optimal hyperparameters by
+
+
+===== PAGE 7 =====
+
+tuning our baseline, and then keep them constant to train all
+other MLPs. See suppl. for more details.
+6.1. Results of Single Style-Shape Model
+We train single style-shape models DHF
+φ
+(θ) on K style-
+shape pairs separately. The mean per vertex test error of
+each model varies depending upon the difﬁculty of partic-
+ular style-shape. The average error across all K models is
+8.04 mm with maximum error of 14.50 mm for a loose ﬁt-
+ting, and minimum error of 6.56 mm for a ﬁt ﬁtting.
+For single style-shape model, in the initial stages of the
+work, we experimented with different modalities of 3D
+mesh learning: UV map, similar to [29], and graph con-
+volutions (Graph CNN) on the garment mesh. For learning
+UV map, we train a decoder from the input pose parame-
+ters to UV map of the garment displacements. For Graph
+CNN [27] by putting the input θ on each node of the graph
+input. We report results on two style-shape pairs in Table 2,
+which shows that a simple MLP is sufﬁcient to learn pose
+dependent deformations for a ﬁxed style-shape φ.
+Figure 4. Results on unseen pose, shape and style. Prediction by
+[46] (left), our mixture model (right). Note that our mixture model
+is able to retain more meaningful folds and details on the garment.
+Style-shape
+MLP
+UV Decoder
+Graph CNN
+Loose-ﬁt
+14.5
+15.9
+16.1
+Tight-ﬁt
+10.1
+11.4
+11.7
+Table 2. Mean per vertex error in mm for the pose dependent
+prediction by MLP, UV Decoder and Graph CNN for two style-
+shapes.
+6.2. Results of TailorNet
+We deﬁne our baseline fBL(β, θ, γ) : R|θ|+|β|+|γ| →
+Rm×3 implemented as a MLP to predict the displacements.
+Table 3 shows that our mixture model outperforms the base-
+line by a slight margin on 3 testing splits.
+Figure 5. Baseline method (left) smooths out the ﬁne details over
+the garment. TailorNet (middle) is able to retain as many wrinkles
+as PBS groundtruth (right).
+Figure 6. (left) Mixing the outputs of prototypes directly without
+decomposition smooths out the ﬁne details. (right) The decom-
+position into high and low frequencies allows us to predict good
+garment ﬁt with details.
+Split
+Style-shape
+Pose
+Our
+Our Mixture
+No.
+set
+set
+Baseline
+Model
+2
+train
+test
+10.6
+10.2
+3
+test
+train
+11.7
+11.4
+4
+test
+test
+11.6
+11.4
+Table 3. Mean per vertex error in mm for 3 testing splits in Sec-
+tion 5.3. Our mixture performs slightly better than the baseline
+quantitatively, and signiﬁcantly better qualitatively.
+Qualitatively, TailorNet outperforms the baseline and
+previous works. Figure 4 shows the garment predicted by
+Santesteban et al. [46] and our mixture model. Figure 5
+shows the qualitative difference between the output by Tai-
+lorNet and our baseline trained on the same dataset.
+To validate our choice to decompose high and low fre-
+quency details, we consider a mixture model where individ-
+ual MLPs predict style-shape dependent displacements di-
+rectly without decomposition. Figure 6 shows that although
+it can approximate the overall shape well, it looses the ﬁne
+wrinkles. TailorNet retains the ﬁne details and provides in-
+tuitive control over high frequency details.
+Sequences of AMASS [34]:
+TailorNet generalizes
+(some poses shown in Fig. 7) despite being trained on com-
+
+
+===== PAGE 8 =====
+
+Figure 7. Left: Predictions of TailorNet for multiple garments and completely unseen poses. Right: TailorNet prediction with a real texture.
+pletely different poses. Notably, the results are temporally
+coherent, despite not modelling the dynamics. See suppl.
+video for visualization.
+6.3. Multiple Garments
+To show the generalizability of TailorNet, we trained it
+separately for 3 more garments - Shirt, Pants and Skirt.
+Since skirt do not follow the topology of template body
+mesh, we attach a skirt template to the root joint of
+SMPL [41]. For each of these garments, we simulate the
+dataset for 9 shapes with a common style and trained the
+model. Figure 7 shows the the detailed predictions by Tai-
+lorNet. Since we use the base garments, which come from
+a real digital wardrobe [6], we can also transfer the textures
+from real scan on our predictions.
+6.4. Runtime Performance
+We implement TailorNet using PyTorch [40]. On a gam-
+ing laptop with an NVIDIA GeForce GTX 1060 GPU and
+Intel i7 CPU, our approach runs from 1 to 2 ms per frame,
+which is 1000 times faster than PBS it is trained from. Just
+on CPU, it runs 100 times faster than PBS.
+7. Discussion and Conclusion
+TailorNet is the ﬁrst data-driven clothing model of pose,
+shape and style. The experiments show that a simple MLP
+approximates clothing deformations with an accuracy of 11
+mm, which is as good as more sophisticated graph-CNN, or
+displacements prediction in UV-space, but shares the same
+limitations with existing methods: when it is trained with
+different body shapes (and styles in our case) results are
+overly smooth and lack realism. To address this, we pro-
+posed a model which predicts low and high frequencies sep-
+arately. Several experiments show that our narrow band-
+width mixture model to predict high-frequency preserves
+signiﬁcantly more detail than existing models, despite hav-
+ing a much harder task, that is, modelling pose dependent
+deformation as a function of shape and style jointly.
+In future work, we plan to ﬁt the model to scans, im-
+ages and videos, and will investigate reﬁning it using video
+data in a self-supervised fashion, or using real 3D cloth cap-
+tures [41]. We also plan to make our model sensitive to
+the physical properties of the cloth fabric and human soft-
+tissue [42].
+Our TailorNet 1000 times faster than PBS, allows easy
+control over style, shape and pose without manual edit-
+ing.
+Furthermore, the model is differentiable, which is
+crucial for computer vision and learning applications. We
+will make TailorNet and our dataset publicly available, and
+will continuously add more garment categories and styles
+to make itl even more widely useable. TailorNet ﬁlls a key
+missing component in existing body models like SMPL and
+ADAM [32, 24]: realistic clothing, which is necessary for
+animation of virtual humans, and to explain the complexi-
+ties of dressed people in scans, images, and video.
+Acknowledgements.
+This work is partly funded by
+the Deutsche Forschungsgemeinschaft (DFG, German Re-
+search Foundation) - 409792180 (Emmy Noether Pro-
+gramme, project: Real Virtual Humans) and Google Fac-
+ulty Research Award. We thank Bharat Lal Bhatnagar and
+Garvita Tiwari for insightful discussions, and Dan Casas for
+providing us test results of [46].
+
+
+===== PAGE 9 =====
+
+References
+[1] https://www.marvelousdesigner.com/. 6
+[2] Michal Aharon, Michael Elad, and Alfred Bruckstein. K-
+svd: An algorithm for designing overcomplete dictionaries
+for sparse representation. IEEE Transactions on signal pro-
+cessing, 54(11):4311–4322, 2006. 6
+[3] Thiemo Alldieck, Marcus Magnor, Bharat Lal Bhatnagar,
+Christian Theobalt, and Gerard Pons-Moll. Learning to re-
+construct people in clothing from a single RGB camera.
+In IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2019. 3
+[4] Thiemo Alldieck, Marcus Magnor, Weipeng Xu, Christian
+Theobalt, and Gerard Pons-Moll. Video based reconstruction
+of 3D people models. In IEEE Conf. on Computer Vision and
+Pattern Recognition, 2018. 3
+[5] Thiemo Alldieck, Gerard Pons-Moll, Christian Theobalt,
+and Marcus Magnor. Tex2shape: Detailed full human body
+geometry from a single image. In IEEE International Con-
+ference on Computer Vision (ICCV). IEEE, oct 2019. 3
+[6] Bharat Lal Bhatnagar, Garvita Tiwari, Christian Theobalt,
+and Gerard Pons-Moll. Multi-garment net: Learning to dress
+3d people from images. In IEEE International Conference on
+Computer Vision (ICCV). IEEE, oct 2019. 2, 3, 4, 5, 6, 8
+[7] Mario Botsch, Leif Kobbelt, Mark Pauly, Pierre Alliez, and
+Bruno L´evy. Polygon Mesh Processing. A K Peters, 2010. 5
+[8] Dan Casas, Marco Volino, John Collomosse, and Adrian
+Hilton. 4d video textures for interactive character appear-
+ance. Computer Graphics Forum, 33(2):371–380, 2014. 2
+[9] Dan Casas, Marco Volino, John Collomosse, and Adrian
+Hilton. 4D Video Textures for Interactive Character Appear-
+ance. Computer Graphics Forum (Proceedings of EURO-
+GRAPHICS), 33(2):371–380, 2014. 3
+[10] Edilson de Aguiar, Leonid Sigal, Adrien Treuille, and Jes-
+sica K. Hodgins. Stable spaces for real-time clothing. ACM
+Trans. Graph., 29(4):106:1–106:9, 2010. 2, 3
+[11] Fernando De la Torre, Jessica Hodgins, Javier Montano,
+Sergio Valcarcel, R Forcada, and J Macey.
+Guide to the
+carnegie mellon university multimodal activity (cmu-mmac)
+database. Robotics Institute, Carnegie Mellon University, 5,
+2009. 3
+[12] Mathieu Desbrun, Mark Meyer, Peter Schr¨oder, and Alan H
+Barr.
+Implicit fairing of irregular meshes using diffusion
+and curvature ﬂow. In Proceedings of the 26th annual con-
+ference on Computer graphics and interactive techniques,
+pages 317–324, 1999. 5
+[13] Haoye Dong, Xiaodan Liang, Xiaohui Shen, Bochao Wang,
+Hanjiang Lai, Jia Zhu, Zhiting Hu, and Jian Yin. Towards
+multi-pose guided virtual try-on network. In The IEEE In-
+ternational Conference on Computer Vision (ICCV), October
+2019. 3
+[14] Haoye Dong, Xiaodan Liang, Xiaohui Shen, Bowen Wu,
+Bing-Cheng Chen, and Jian Yin. Fw-gan: Flow-navigated
+warping gan for video virtual try-on.
+In The IEEE Inter-
+national Conference on Computer Vision (ICCV), October
+2019. 3
+[15] Russell Gillette, Craig Peters, Nicholas Vining, Essex Ed-
+wards, and Alla Sheffer. Real-time dynamic wrinkling of
+coarse animated cloth. In Proc. Symposium on Computer
+Animation, 2015. 3
+[16] Rony Goldenthal, David Harmon, Raanan Fattal, Michel
+Bercovier, and Eitan Grinspun. Efﬁcient simulation of inex-
+tensible cloth. ACM Transactions on Graphics (Proceedings
+of SIGGRAPH 2007), 26(3):to appear, 2007. 3
+[17] Peng Guan, Loretta Reiss, David A. Hirshberg, Alexander
+Weiss, and Michael J. Black. DRAPE: dressing any person.
+ACM Trans. Graph., 31(4):35:1–35:10, 2012. 2, 3, 4, 5
+[18] Erhan Gundogdu, Victor Constantin, Amrollah Seifoddini,
+Minh Dang, Mathieu Salzmann, and Pascal Fua. Garnet: A
+two-stream network for fast and accurate 3d cloth draping.
+CoRR, abs/1811.10983, 2018. 2, 3, 4, 5
+[19] Marc Habermann, Weipeng Xu, , Michael Zollhoefer, Ger-
+ard Pons-Moll, and Christian Theobalt. Livecap: Real-time
+human performance capture from monocular video. Trans-
+actions on Graphics (ToG) 2019, oct 2019. 3
+[20] Xintong Han, Zuxuan Wu, Zhe Wu, Ruichi Yu, and Larry S
+Davis. Viton: An image-based virtual try-on network. In
+CVPR, 2018. 3
+[21] Wei-Lin Hsiao, Isay Katsman, Chao-Yuan Wu, Devi Parikh,
+and Kristen Grauman. Fashion++: Minimal edits for out-
+ﬁt improvement. In The IEEE International Conference on
+Computer Vision (ICCV), October 2019. 3
+[22] Chenfanfu Jiang,
+Theodore Gast,
+and Joseph Teran.
+Anisotropic elastoplasticity for cloth, knit and hair frictional
+contact. ACM Transactions on Graphics (TOG), 36(4):152,
+2017. 3
+[23] Ning Jin, Yilin Zhu, Zhenglin Geng, and Ronald Fedkiw.
+A pixel-based framework for data-driven clothing. CoRR,
+abs/1812.01677, 2018. 3
+[24] Hanbyul Joo, Tomas Simon, and Yaser Sheikh. Total cap-
+ture: A 3d deformation model for tracking faces, hands, and
+bodies. In Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition, pages 8320–8329, 2018. 8
+[25] Ladislav Kavan, Dan Gerszewski, Adam W. Bargteil, and
+Peter-Pike Sloan. Physics-inspired upsampling for cloth sim-
+ulation in games.
+ACM Trans. Graph., 30(4):93:1–93:10,
+July 2011. 3
+[26] Doyub Kim, Woojong Koh, Rahul Narain, Kayvon Fa-
+tahalian, Adrien Treuille, and James F. O’Brien.
+Near-
+exhaustive precomputation of secondary cloth effects. ACM
+Transactions on Graphics, 32(4):87:1–7, July 2013.
+Pro-
+ceedings of ACM SIGGRAPH 2013, Anaheim. 3
+[27] Thomas N. Kipf and Max Welling. Semi-supervised classi-
+ﬁcation with graph convolutional networks. In International
+Conference on Learning Representations (ICLR), 2017. 7
+[28] Nikos Kolotouros, Georgios Pavlakos, and Kostas Dani-
+ilidis. Convolutional mesh regression for single-image hu-
+man shape reconstruction. In CVPR, 2019. 2
+[29] Zorah Lahner, Daniel Cremers, and Tony Tung. Deepwrin-
+kles: Accurate and realistic clothing modeling.
+In Pro-
+ceedings of the European Conference on Computer Vision
+(ECCV), pages 667–684, 2018. 2, 3, 4, 7
+[30] Christoph Lassner, Gerard Pons-Moll, and Peter V. Gehler.
+A generative model of people in clothing. In Proceedings
+IEEE International Conference on Computer Vision (ICCV),
+Piscataway, NJ, USA, oct 2017. IEEE. 3
+
+
+===== PAGE 10 =====
+
+[31] Or Litany, Alex Bronstein, Michael Bronstein, and Ameesh
+Makadia. Deformable shape completion with graph convo-
+lutional autoencoders. CVPR, 2018. 2
+[32] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard
+Pons-Moll, and Michael J. Black. SMPL: A skinned multi-
+person linear model. ACM Transactions on Graphics (Proc.
+SIGGRAPH Asia), 34(6):248:1–248:16, Oct. 2015. 2, 3, 8
+[33] Qianli Ma, Jinlong Yang, Anurag Ranjan, Sergi Pujades,
+Gerard Pons-Moll, Siyu Tang, and Michael Black. Learning
+to dress 3d people in generative clothing. In IEEE Confer-
+ence on Computer Vision and Pattern Recognition (CVPR).
+IEEE, jun 2020. 3
+[34] Naureen Mahmood, Nima Ghorbani, Nikolaus F. Troje, Ger-
+ard Pons-Moll, and Michael J. Black. Amass: Archive of
+motion capture as surface shapes.
+In IEEE International
+Conference on Computer Vision (ICCV). IEEE, oct 2019. 1,
+7
+[35] E. Miguel, D. Bradley, B. Thomaszewski, B. Bickel, W. Ma-
+tusik, M. A. Otaduy, and S. Marschner. Data-driven esti-
+mation of cloth simulation models. Comput. Graph. Forum,
+31(2pt2):519–528, May 2012. 3
+[36] Aymen Mir, Thiemo Alldieck, and Gerard Pons-Moll. Learn-
+ing to transfer texture from clothing images to 3d humans. In
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion (CVPR). IEEE, jun 2020. 3
+[37] Matthias M¨uller.
+Hierarchical position based dynamics.
+2008. 3
+[38] Matthias M¨uller, Bruno Heidelberger, Marcus Hennix, and
+John Ratcliff. Position based dynamics. Journal of Visual
+Communication and Image Representation, 18(2):109–118,
+2007. 3
+[39] Alexandros Neophytou and Adrian Hilton. A layered model
+of human body and garment deformation. In 2014 2nd In-
+ternational Conference on 3D Vision, volume 1, pages 171–
+178. IEEE, 2014. 3
+[40] Adam Paszke, Sam Gross, Soumith Chintala, Gregory
+Chanan, Edward Yang, Zachary DeVito, Zeming Lin, Alban
+Desmaison, Luca Antiga, and Adam Lerer. Automatic dif-
+ferentiation in PyTorch. In NIPS Autodiff Workshop, 2017.
+8
+[41] Gerard Pons-Moll, Sergi Pujades, Sonny Hu, and Michael
+Black. ClothCap: Seamless 4D clothing capture and retar-
+geting. ACM Transactions on Graphics, (Proc. SIGGRAPH),
+36(4), 2017. 3, 6, 8
+[42] Gerard Pons-Moll, Javier Romero, Naureen Mahmood, and
+Michael J. Black. Dyna: A model of dynamic human shape
+in motion.
+ACM Transactions on Graphics, (Proc. SIG-
+GRAPH), 34(4):120:1–120:14, Aug. 2015. 8
+[43] Xavier Provot et al. Deformation constraints in a mass-spring
+model to describe rigid cloth behaviour. In Graphics inter-
+face, pages 147–147. Canadian Information Processing So-
+ciety, 1995. 3
+[44] Amit Raj, Patsorn Sangkloy, Huiwen Chang, James Hays,
+Duygu Ceylan, and Jingwan Lu. Swapnet: Image based gar-
+ment transfer. In European Conference on Computer Vision,
+pages 679–695. Springer, 2018. 3
+[45] Bodo Rosenhahn, Uwe Kersting, Katie Powell, Reinhard
+Klette, Gisela Klette, and Hans-Peter Seidel. A system for
+articulated tracking incorporating a clothing model. Machine
+Vision and Applications, 18(1):25–40, 2007. 3
+[46] Igor Santesteban, Miguel A. Otaduy, and Dan Casas.
+Learning-based animation of clothing for virtual try-on.
+Comput. Graph. Forum, 38(2):355–366, 2019. 2, 3, 4, 5,
+7, 8
+[47] Andrew Selle, Jonathan Su, Geoffrey Irving, and Ronald
+Fedkiw.
+Robust high-resolution cloth using parallelism,
+history-based collisions, and accurate friction.
+IEEE
+Transactions on Visualization and Computer Graphics,
+15(2):339–350, 2009. 3
+[48] Aliaksandra Shysheya, Egor Zakharov, Kara-Ali Aliev,
+Renat Bashirov, Egor Burkov, Karim Iskakov, Aleksei
+Ivakhnenko, Yury Malkov, Igor Pasechnik, Dmitry Ulyanov,
+et al. Textured neural avatars. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition,
+pages 2387–2397, 2019. 3
+[49] Leonid Sigal, Moshe Mahler, Spencer Diaz, Kyna McIntosh,
+Elizabeth Carter, Timothy Richards, and Jessica Hodgins. A
+perceptual control space for garment simulation. ACM Trans.
+Graph., 34(4):117:1–117:10, July 2015. 3
+[50] Carsten Stoll, Juergen Gall, Edilson de Aguiar, Sebastian
+Thrun, and Christian Theobalt.
+Video-based reconstruc-
+tion of animatable human characters. ACM Trans. Graph.,
+29(6):139:1–139:10, Dec. 2010. 3
+[51] Yu Tao, Zerong Zheng, Kaiwen Guo, Jianhui Zhao, Dai
+Quionhai, Hao Li, Gerard Pons-Moll, and Yebin Liu. Dou-
+blefusion: Real-time capture of human performance with in-
+ner body shape from a depth sensor. In IEEE Conf. on Com-
+puter Vision and Pattern Recognition (CVPR), june 2018. 3
+[52] Yu Tao, Zerong Zheng, Yuan Zhong, Jianhui Zhao, Dai
+Quionhai, Gerard Pons-Moll, and Yebin Liu.
+Simulcap :
+Single-view human performance capture with cloth simula-
+tion. In IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), jun 2019. 3
+[53] Demetri Terzopoulos, John Platt, Alan Barr, and Kurt Fleis-
+cher. Elastically deformable models. ACM Siggraph Com-
+puter Graphics, 21(4):205–214, 1987. 3
+[54] Bochao Wang, Huabin Zheng, Xiaodan Liang, Yimin Chen,
+and Liang Lin.
+Toward characteristic-preserving image-
+based virtual try-on network. In Proceedings of the Euro-
+pean Conference on Computer Vision (ECCV), pages 589–
+604, 2018. 3
+[55] Huamin Wang, Florian Hecht, Ravi Ramamoorthi, and
+James F. O’Brien.
+Example-based wrinkle synthesis for
+clothing animation.
+ACM Transactions on Graphics,
+29(4):107:1–8, July 2010. Proceedings of ACM SIGGRAPH
+2010, Los Angles, CA. 3
+[56] Huamin Wang, Florian Hecht, Ravi Ramamoorthi, and
+James F O’Brien.
+Example-based wrinkle synthesis for
+clothing animation.
+In Acm Transactions on Graphics
+(TOG), volume 29, page 107. ACM, 2010. 3
+[57] Huamin Wang, James F. O’Brien, and Ravi Ramamoorthi.
+Data-driven elastic models for cloth: Modeling and measure-
+ment. ACM Transactions on Graphics, Proc. SIGGRAPH,
+30(4):71:1–11, July 2011. 3
+[58] Tuanfeng Y. Wang, Duygu Ceylan, Jovan Popovic, and
+Niloy J. Mitra. Learning a shared shape space for multimodal
+
+
+===== PAGE 11 =====
+
+garment design. ACM Trans. Graph., 37(6):203:1–203:13,
+2018. 2, 3, 4
+[59] Chung-Yi Weng, Brian Curless, and Ira Kemelmacher-
+Shlizerman. Photo wake-up: 3d character animation from
+a single photo. In IEEE Conf. on Computer Vision and Pat-
+tern Recognition, 2019. 3
+[60] Feng Xu, Yebin Liu, Carsten Stoll, James Tompkin, Gau-
+rav Bharaj, Qionghai Dai, Hans-Peter Seidel, Jan Kautz,
+and Christian Theobalt. Video-based characters: Creating
+new human performances from a multi-view video database.
+ACM Trans. Graph., 30(4):32:1–32:10, July 2011. 3
+[61] Jinlong Yang,
+Jean-S´ebastien Franco,
+Franck H´etroy-
+Wheeler, and Stefanie Wuhrer. Analyzing clothing layer de-
+formation statistics of 3d human motions. In European Conf.
+on Computer Vision, pages 237–253, 2018. 3
+[62] Shan Yang, Zherong Pan, Tanya Amert, Ke Wang, Licheng
+Yu, Tamara Berg, and Ming C Lin. Physics-inspired garment
+recovery from a single-view image. ACM Transactions on
+Graphics (TOG), 37(5):170, 2018. 3
+[63] Ruiyun Yu, Xiaoqi Wang, and Xiaohui Xie.
+Vtnfp: An
+image-based virtual try-on network with body and clothing
+feature preservation. In The IEEE International Conference
+on Computer Vision (ICCV), October 2019. 3
+[64] Mihai Zanﬁr, Alin-Ionut Popa, Andrei Zanﬁr, and Cristian
+Sminchisescu.
+Human appearance transfer.
+In Proceed-
+ings of the IEEE Conference on Computer Vision and Pattern
+Recognition, pages 5391–5399, 2018. 3
+[65] Bo Zhao, Xiao Wu, Zhi-Qi Cheng, Hao Liu, Zequn Jie, and
+Jiashi Feng.
+Multi-view image generation from a single-
+view. In 2018 ACM Multimedia Conference on Multimedia
+Conference, pages 383–391. ACM, 2018. 3
+[66] Shizhan Zhu, Sanja Fidler, Raquel Urtasun, Dahua Lin, and
+Chen Change Loy. Be your own prada: Fashion synthesis
+with structural coherence. In ICCV, 2017. 3
+[67] Shizhan Zhu, Raquel Urtasun, Sanja Fidler, Dahua Lin, and
+Chen Change Loy. Be your own prada: Fashion synthesis
+with structural coherence. In Proceedings of the IEEE Inter-
+national Conference on Computer Vision, pages 1680–1688,
+2017. 3

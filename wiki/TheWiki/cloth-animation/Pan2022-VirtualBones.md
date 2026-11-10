@@ -47,6 +47,7 @@ Houdini Vellum；3 件 dress + MMD 舞蹈；10 组参数 ×40000 帧。比 Tailo
 ## 关联
 
 - 原文：[[RawSource/articles/Pan-2022-VirtualBones]]
+- 引文图谱：[[BoneDrivenCloth-CitationMap]]（2026-10 从本文与 SSDR 引文扩展的文献清单）
 - 对比：[[Compare-Pan2022-vs-Jin2024]]
 - 概念：[[VirtualBones]]
 - 演进：[[Jin2024-RopeChainQNN]]
@@ -56,3 +57,4 @@ Houdini Vellum；3 件 dress + MMD 舞蹈；10 组参数 ×40000 帧。比 Tailo
 - **原班作者未出骨骼驱动宽松布料的直接续作**：一作 Pan 转向通用角色 rigging（TOG 2026「ACT」，把 SSDR/虚拟骨骼思路泛化到任意拓扑角色），Tianjia Shao 继续布料（2025 CGF 持久褶皱）。
 - [[Jin2024-RopeChainQNN]] **作者与本文不重叠**（Yongxu Jin / Fedkiw，Stanford 组为主）——是"同研究线、不同班底"的推进，不是原班续作。
 - 2026 Meta Reality Labs 的 [[HyperBones2026]] / [[PhySkin2026]] 承接本文骨骼驱动表示：骨骼改 FPS 采样、动态改教师蒸馏或主动放弃、身份改调制。详见 [[Compare-BoneDrivenCloth-Lineage]]。
+- 工程实践：[[SkirtQNN-Design]]（本项目排除本文 GRU 路线的具体分析）

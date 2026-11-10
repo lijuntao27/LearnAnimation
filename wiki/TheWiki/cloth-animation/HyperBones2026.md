@@ -17,7 +17,7 @@ summary: Meta 2026 自监督实时骨骼驱动布料：FPS 虚拟骨骼+Bone-Net
 
 ## 问题定位
 
-骨骼驱动布料主线（[[Pan2022-VirtualBones]]）遗留三大病：要仿真数据、GRU 学动态泛化差/长序列漂移、身份适配贵。HyperBones 同时回应三者：**不用 GRU（改 3 帧短窗口自回归）、零仿真数据（教师自监督）、身份用 FiLM 零成本调制**。
+骨骼驱动布料主线（[[Pan2022-VirtualBones]]）遗留三大病：要仿真数据、GRU 学动态泛化差/长序列漂移、身份适配贵。HyperBones 同时回应三者：**不用 GRU（改 3 帧短窗口自回归）、零仿真数据（教师自监督）、身份用 [[FiLM]] 零成本调制**。
 
 ## 方法（三模块）
 
@@ -82,4 +82,4 @@ $$L_{3D}=\underbrace{L_{MSE}}_{\text{对齐教师位置}}+\underbrace{L_{lap}}_{
 
 - 原文：[[RawSource/articles/HyperBones-2026]]
 - 对比：[[Compare-BoneDrivenCloth-Lineage]]
-- 前驱：[[Pan2022-VirtualBones]] · 概念：[[VirtualBones]] · 孪生：[[PhySkin2026]]
+- 前驱：[[Pan2022-VirtualBones]] · 概念：[[VirtualBones]] · [[FiLM]] · 孪生：[[PhySkin2026]]

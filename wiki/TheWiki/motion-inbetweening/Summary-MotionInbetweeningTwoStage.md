@@ -56,7 +56,7 @@ summary: Motion In-betweening 论文（Qin 2022）的录入摘要与导览，串
 - [[Transformer]] —— 核心架构、完整前向数据流公式
 - [[SelfAttention]] —— Q/K/V 手算全程、掩码做补间、W_Q 维度
 - [[InbetweeningPositionalEncodings]] 与 [[Transformer]] —— 位置编码为何必需
-- [[Backpropagation]] —— 从 Loss 传回 W_Q、雅可比
+- [[Backpropagation]] —— 通用机制（链式法则/雅可比）；[[Backpropagation-Transformer]] —— 从 Loss 传回 W_Q 的项目实例
 - [[TrainingMechanics]] —— LayerNorm、Adam vs SGD、Noam warmup
 
 ## 阅读路径建议

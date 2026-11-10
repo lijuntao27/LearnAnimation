@@ -2,35 +2,38 @@
 type: concept
 title: 反向传播与雅可比矩阵
 created: 2026-08-27
-updated: 2026-08-27
+updated: 2026-09-07
 tags: [deep-learning, backpropagation, jacobian, calculus, training]
-summary: 反向传播=链式法则+局部性，梯度信号从损失倒流；矩阵乘法反向核心规则 ∂L/∂W=X^T·∂L/∂Y；从 Loss 经 W_O/A·V/softmax/Q·K^T 传回 W_Q，最终形式 z^T·g_Q 与 MLP 同形；雅可比是向量函数的导数，softmax 满雅可比须单独处理。
+summary: 反向传播=链式法则+局部性，梯度信号从损失倒流；矩阵乘法反向核心规则 ∂L/∂W=X^T·∂L/∂Y；Nielsen 四公式 BP1-BP4（误差 δ=∂C/∂z 逐层回传）为通用框架；雅可比是向量函数的导数，softmax 满雅可比须单独处理。项目 W_Q 反传实例见 Backpropagation-Transformer。
 ---
 
 # 反向传播与雅可比矩阵
+
+> 本页是**通用概念页**：反向传播的一般机制（链式法则、局部性、矩阵乘法反向规则、Nielsen 四公式）与雅可比矩阵。
+> 在 Transformer 项目里的具体反传链（从 Loss 传回 $W_Q$）见 [[Backpropagation-Transformer]]。
 
 ## 反向传播 = 链式法则 + 局部性
 
 ### 链式法则
 
-若 `L = f(g(h(x)))`，则
+若 $L = f(g(h(x)))$，则：
 
-```
-∂L/∂x = (∂L/∂f) · (∂f/∂g) · (∂g/∂h) · (∂h/∂x)
-```
+$$
+\frac{\partial L}{\partial x} = \frac{\partial L}{\partial f}\cdot\frac{\partial f}{\partial g}\cdot\frac{\partial g}{\partial h}\cdot\frac{\partial h}{\partial x}
+$$
 
-损失对最底层 `x` 的梯度 = 一连串"局部导数"乘起来。
+损失对最底层 $x$ 的梯度 = 一连串"局部导数"乘起来。
 
 ### 局部性（反向传播能高效算的关键）
 
 每个运算**只需要知道两样东西**就能算出自己的梯度：
 
-1. **上游传来的梯度** `g_out = ∂L/∂(我的输出)` —— 从后一站收到
+1. **上游传来的梯度** $g_{out} = \partial L/\partial(\text{我的输出})$ —— 从后一站收到
 2. **我自己的局部导数** —— 输出怎么依赖输入
 
 有了这两样，它能产出：
-- **传给前面的梯度** `g_in = ∂L/∂(我的输入)` —— 继续往前传
-- **我自己参数的梯度** `∂L/∂(我的参数)` —— 留给 SGD/[[TrainingMechanics|Adam]] 更新
+- **传给前面的梯度** $g_{in} = \partial L/\partial(\text{我的输入})$ —— 继续往前传
+- **我自己参数的梯度** $\partial L/\partial(\text{我的参数})$ —— 留给 SGD/[[TrainingMechanics|Adam]] 更新
 
 所以反向传播 = **一个"梯度信号"从损失倒着流，每经过一个运算就被变换一下、并顺便算出那个运算自己参数的梯度**。
 
@@ -38,97 +41,69 @@ summary: 反向传播=链式法则+局部性，梯度信号从损失倒流；矩
 
 整个反向传播里 **80% 靠这一条**，和 [[NeuralNetworkBasics|MLP]] 一模一样：
 
-> 若前向 `Y = X · W`，则反向：
-> - **参数梯度**：`∂L/∂W = X^T · ∂L/∂Y`
-> - **输入梯度（往下传）**：`∂L/∂X = ∂L/∂Y · W^T`
+> 若前向 $Y = X\cdot W$，则反向：
+>
+> $$
+> \frac{\partial L}{\partial W} = X^T\cdot\frac{\partial L}{\partial Y}
+> \qquad\text{（参数梯度）}
+> $$
+>
+> $$
+> \frac{\partial L}{\partial X} = \frac{\partial L}{\partial Y}\cdot W^T
+> \qquad\text{（输入梯度，继续往下传）}
+> $$
 
-记住这条，后面只是反复套。softmax 那步稍特殊，需雅可比，单独给。
+记住这条，后面只是反复套。softmax 那步稍特殊，需雅可比，单独给（见下文）。
 
-## 从 Loss 一路传回 W_Q
+## Nielsen 四公式框架（BP1–BP4）
 
-记 `g_X = ∂L/∂X`。单头简化（省略相对 PE/缩放/掩码，它们是逐元素加减乘，梯度平凡）。前向：
+> 来源：Michael Nielsen《Neural Networks and Deep Learning》Ch.2。与"矩阵乘法反向规则"是**同一件事的两种表述**：规则讲"梯度 $g$ 逐运算回传"，Nielsen 框架讲"误差 $\delta$ 逐层回传"——见下方对照。
 
-```
-z = LayerNorm(H)
-Q = z · W_Q          ← W_Q 在这
-K = z · W_K
-V = z · W_V
-S = Q · K^T          (30×30)
-A = softmax(S)        (30×30)
-O = A · V             (30×64)
-... → W_O → +残差 → FFN → 下层 → ... → decoder → Y → Loss
-```
+### 核心量：误差 $\delta$（对加权输入的梯度）
 
-形状（单头，`d_head=64`，`seq=30`）：`z: 30×512`, `W_Q: 512×64`, `Q: 30×64`, `K: 30×64`, `S/A: 30×30`, `V: 30×64`, `O: 30×64`。
+先定义第 $l$ 层的**加权输入** $z^l \equiv w^l a^{l-1}+b^l$（激活 $a^l=\sigma(z^l)$ 之前的值）。误差就是代价对这个加权输入的偏导：
 
-### 倒着走
+$$
+\delta^l_j \equiv \frac{\partial C}{\partial z^l_j}
+$$
 
-**起点**：`g_Y = ∂L/∂Y`（L1 损失：`g_Y = sign(Y - Y_gt)`）
+**恶魔直觉**：小恶魔坐在神经元处，给加权输入加扰动 $\Delta z^l_j$，代价随之变化 $\frac{\partial C}{\partial z^l_j}\Delta z^l_j$。若 $\partial C/\partial z^l_j$ 很大（正或负），恶魔选异号的 $\Delta z^l_j$ 就能大幅降代价；若它接近零，该神经元已"接近最优"。所以 $\delta^l_j$ 是"该神经元误差"的天然度量。
 
-**穿过 decoder MLP + 最终 LayerNorm + 5 层（残差+FFN+attention）**：每步用矩阵乘法反向规则，一路传到当前层 ℓ 的 attention 子层输出，带着 `g_att = ∂L/∂(该层 attention 输出)`。
+### 四个基本方程
 
-**attention 子层内部倒退（单头）**：
+| 方程 | 内容 | 直觉 |
+|---|---|---|
+| **BP1** | $\delta^L_j = \frac{\partial C}{\partial a^L_j}\sigma'(z^L_j)$，矩阵形式 $\delta^L = \nabla_a C \odot \sigma'(z^L)$ | 输出层误差 = 代价对输出的梯度 × 激活函数斜率 |
+| **BP2** | $\delta^l = \big((w^{l+1})^T \delta^{l+1}\big)\odot\sigma'(z^l)$ | 把下一层误差**反穿权重转置**（移过权重），再**反穿 $\sigma'$**（移过激活） |
+| **BP3** | $\frac{\partial C}{\partial b^l_j} = \delta^l_j$ | 偏置梯度**恰好等于**误差 |
+| **BP4** | $\frac{\partial C}{\partial w^l_{jk}} = a^{l-1}_k\delta^l_j$，简写 $\frac{\partial C}{\partial w}=a_{in}\delta_{out}$ | 权重梯度 = 输入端激活 × 输出端误差 |
 
-```
-(a) 穿过 W_O:           g_O = g_att · W_O^T                    (30×64)
-(b) O = A·V:             g_A = g_O · V^T     (30×64·64×30=30×30)   ← 对输出的梯度 → 对权重的梯度
-                        g_V = A^T · g_O     (传给 V 那条路)
-(c) A = softmax(S):      g_S = softmax_jac(g_A, A)              (30×30)   ← 见下方雅可比
-(d) S = Q·K^T:           g_Q = g_S · K       (30×30·30×64=30×64)   ← 对分数的梯度 → 对 query 的梯度
-                        g_K = g_S^T · Q     (传给 K 那条路)
-(e) Q = z·W_Q:           g_W_Q = z^T · g_Q   (512×30·30×64=512×64) ← ∂L/∂W_Q 到达!
-                        g_z   = g_Q · W_Q^T (传给 z，过 LayerNorm 回 H，和残差路汇合)
-```
+用 BP1 算 $\delta^L$ → 反复用 BP2 算 $\delta^{L-1},\delta^{L-2},\ldots$ → 用 BP3/BP4 由 $\delta^l$ 得到偏置与权重的梯度。这就是 Ch.1 代码里 `backprop(x,y)` 的完整逻辑。
 
-**`g_W_Q` 就是 `∂L/∂W_Q`，梯度传到了。** shape `512×64` 与 `W_Q` 完全一致。✓
+### 两个直接洞察
 
-### 全链展开
+1. **低激活 ⟹ 学得慢**：BP4 中 $a^{l-1}_k\approx0$ 时梯度 $\approx0$。
+2. **饱和 ⟹ 学得慢**：BP1/BP2 中的 $\sigma'(z^l)$——sigmoid 输出接近 0 或 1 时 $\sigma'$ 趋零，误差被"掐灭"。这直接引出 Ch.3 的动机：换交叉熵代价 + 换激活函数（$\sigma'$ 恒正）来避免饱和。
 
-```
-g_W_Q = z^T · g_Q
-      = z^T · ( g_S · K )
-      = z^T · ( softmax_jac(g_A, A) · K )
-      = z^T · ( softmax_jac( g_O · V^T, A ) · K )
-      = z^T · ( softmax_jac( (g_att · W_O^T) · V^T, A ) · K )
-```
+### 接口契约：为什么要求「代价 = 单样本代价的平均」
 
-`g_att` 来自更下游（残差、FFN、下一层、……、decoder、`Y`、Loss）的一路反传。
+反向传播本质是**单样本梯度计算器**——BP1 的 $\nabla_a C_x$ 需要知道单个样本 $x$ 的 $y(x)$ 才能算。所以它要求：
 
-> 多头：每个头 `h` 独立走一遍，得 `g_W_Q^(h) = z^T · g_Q_h`（各 512×64）；8 个头沿输出维拼起来就是大 `W_Q`（512×512）的完整梯度。`z` 在所有头间共享。
+- **假设一**：$C=\frac1n\sum_x C_x$（可分解成单样本代价的平均）→ 逐样本算 $\nabla C_x$ 再平均，才拼出 $\nabla C$；这也是 Ch.1 SGD 抽样平均的前提
+- **假设二**：$C$ 是网络输出 $a^L$ 的函数（不依赖内部状态）→ 链式法则才能从输出往内层传
 
-## 关键洞察：和 MLP 一模一样
+若代价含不可分解的全局项（如对比学习的三元组损失），反向传播就不适用，那类梯度必须绕道单独算。
 
-盯着最终结果：
+### 与"矩阵乘法反向规则"的对照
 
-```
-g_W_Q = z^T · g_Q        （attention 的 W_Q 梯度）
-```
+| Nielsen | 通用规则 | 说明 |
+|---|---|---|
+| $\delta^l$ | $g_{z^l} = \partial L/\partial z^l$ | 同一个量：对第 $l$ 层加权输入的梯度 |
+| BP2 的 $(w^{l+1})^T\delta^{l+1}$ | $\frac{\partial L}{\partial X} = \frac{\partial L}{\partial Y}\cdot W^T$ | 误差反穿权重 = 梯度乘以权重转置 |
+| BP2 的 $\odot\sigma'(z^l)$ | 逐元素激活（如 ReLU 的 0/1 掩码） | 误差反穿激活函数 |
+| BP4 的 $a_{in}\delta_{out}$ | $\frac{\partial L}{\partial W} = X^T\cdot\frac{\partial L}{\partial Y}$ | 权重梯度 = 输入 × 上游梯度 |
 
-对比 MLP 一层 `y = x·W`：
-
-```
-g_W = x^T · g_y          （MLP 的 W 梯度）
-```
-
-**完全同形。** 因为对 `W_Q` 而言，`Q = z·W_Q` 就是一个矩阵乘法层，和 MLP 的 `y=x·W` 没有本质区别。
-
-attention 里那些"吓人"的部分（softmax、`Q·K^T`），在反向传播里**只是变换梯度信号的中间运算**——它们把"对 attention 输出的梯度 `g_att`"，经 `W_O`、`A·V`、softmax、`Q·K^T` 一路转成"对 `Q` 的梯度 `g_Q`"。**到了 `Q = z·W_Q` 这一步，套用的就是最朴素的矩阵乘法反向规则。**
-
-> 所以 attention 的 `W_Q`（及 `W_K`、`W_V`、`W_O`、FFN、PE MLP、γ/β）全部用和 MLP 完全一样的 SGD/反向传播训练。框架的 autograd 自动完成，没人手写。所谓"学 attention"就是链式法则把损失梯度传回这些 W。
-
-## 更新（闭环）
-
-拿到 `g_W_Q` 后，[[TrainingMechanics|Adam]] 更新（所有参数同时各拿各的梯度）：
-
-```
-W_Q ← W_Q − lr · Adam(g_W_Q)
-W_K ← W_K − lr · Adam(g_W_K)
-...（W_V, W_O, FFN, encoder/decoder, PE MLP, γ/β 同理）
-```
-
-重复几十万次 → `W_Q` 等参数被逐渐调成"让损失最低"的值 → attention 学会"该关注谁"。
-
-**闭环**：前向 `Q = z·W_Q` 产生预测 → 算损失 → 反向算 `∂L/∂W_Q` → Adam 调 `W_Q` → 下次前向预测更好。
+> 一句话：**Nielsen 的 $\delta$ 回传 = 通用的 $g$ 回传；BP2 是"反穿一层"的通用写法，矩阵乘法反向规则是它在 $y=xW$ 这一特例上的化简。**
 
 ---
 
@@ -140,68 +115,70 @@ W_K ← W_K − lr · Adam(g_W_K)
 
 | 函数形式 | "导数"叫什么 | 形状 |
 |---|---|---|
-| 标量→标量 `f(x)` | 导数 `df/dx` | 一个数 |
-| 向量→标量 `f(x)` | 梯度 `∇f` | 向量 `[∂f/∂x₁, …, ∂f/∂xₙ]` |
-| **向量→向量 `f(x)`** | **雅可比矩阵 J** | **矩阵，`J_ij = ∂f_i/∂x_j`** |
+| 标量→标量 $f(x)$ | 导数 $df/dx$ | 一个数 |
+| 向量→标量 $f(x)$ | 梯度 $\nabla f$ | 向量 $[\partial f/\partial x_1,\ldots,\partial f/\partial x_n]$ |
+| **向量→向量 $f(x)$** | **雅可比矩阵 $J$** | **矩阵，$J_{ij}=\partial f_i/\partial x_j$** |
 
-**雅可比 `(i,j)` 元 = "输出 `i` 对输入 `j` 的偏导"**，即"拨动输入 `j` 一点点，输出 `i` 变多少"。整张矩阵刻画"每个输出受每个输入多大影响"。
+**雅可比 $(i,j)$ 元 = "输出 $i$ 对输入 $j$ 的偏导"**，即"拨动输入 $j$ 一点点，输出 $i$ 变多少"。整张矩阵刻画"每个输出受每个输入多大影响"。
 
 ### 反向传播需要它
 
 反向过每个运算本质上是在套链式法则：
 
-```
-∂L/∂x = J^T · ∂L/∂y       （y = f(x), J 是 f 的雅可比）
-```
+$$
+\frac{\partial L}{\partial x} = J^T\cdot\frac{\partial L}{\partial y}
+\qquad\text{（} y=f(x)\text{，}J\text{ 是 }f\text{ 的雅可比）}
+$$
 
 **梯度过一个运算 = 上游梯度乘以这个运算的雅可比的转置。** 雅可比就是那个"局部导数"，是链式法则在向量函数上的具体化。
 
 ### 不同运算的雅可比长不一样
 
-- **逐元素运算**（`y=x+5`、`y=relu(x)`）：每个输出只依赖一个输入 → 雅可比是**对角阵**，反向平凡
-- **矩阵乘法 `Y=X·W`**：雅可比有特殊结构，能化简成 `∂L/∂W=X^T·g`、`∂L/∂X=g·W^T`。**不用真构造大雅可比矩阵**
-- **softmax**：每个输出 `A_i` 依赖**所有**输入 `S_j`（因分母是 `Σexp(S)`）→ 雅可比是**满矩阵**，没法化简，须正经算。**这就是反向推导里单独拎出 softmax 的原因。**
+- **逐元素运算**（$y=x+5$、$y=\mathrm{relu}(x)$）：每个输出只依赖一个输入 → 雅可比是**对角阵**，反向平凡
+- **矩阵乘法 $Y=X\cdot W$**：雅可比有特殊结构，能化简成 $\frac{\partial L}{\partial W}=X^T\cdot g$、$\frac{\partial L}{\partial X}=g\cdot W^T$。**不用真构造大雅可比矩阵**
+- **softmax**：每个输出 $A_i$ 依赖**所有**输入 $S_j$（因分母是 $\sum\exp(S)$）→ 雅可比是**满矩阵**，没法化简，须正经算。**这就是反向推导里单独拎出 softmax 的原因。**
 
 ### 3 维 softmax 雅可比数值例子
 
-`s = [1, 2, 3]`，`y = softmax(s) = [0.090, 0.245, 0.665]`。雅可比公式 `J_ij = y_i·(δ_ij − y_j)`：
+$s=[1,2,3]$，$y=\mathrm{softmax}(s)=[0.090,0.245,0.665]$。雅可比公式 $J_{ij}=y_i\cdot(\delta_{ij}-y_j)$：
 
-```
-J ≈
-[  0.082  -0.022  -0.060
-  -0.022   0.185  -0.163
-  -0.060  -0.163   0.223 ]
-```
+$$
+J \approx
+\begin{bmatrix}
+0.082 & -0.022 & -0.060\\
+-0.022 & 0.185 & -0.163\\
+-0.060 & -0.163 & 0.223
+\end{bmatrix}
+$$
 
 读出 softmax 的"性格"：
 
-- **对角正**：增大 `s_i` 增大 `y_i`（被 `(1−y_i)` 削弱，因已接近饱和）
-- **非对角负**：增大 `s_j` 减小其他 `y_i`（权重和必须=1，一个变大别人让）
-- **每行和=0**：`Σy` 恒为 1，整体平移 `s` 不改 `y`
+- **对角正**：增大 $s_i$ 增大 $y_i$（被 $(1-y_i)$ 削弱，因已接近饱和）
+- **非对角负**：增大 $s_j$ 减小其他 $y_i$（权重和必须 $=1$，一个变大别人让）
+- **每行和 $=0$**：$\sum y$ 恒为 1，整体平移 $s$ 不改 $y$
 
 ### 反向里怎么用
 
-假设损失想让 `y₁` 变大，即 `g_y = [1, 0, 0]`。反向 `g_s = J^T · g_y` = J 第一行：
+假设损失想让 $y_1$ 变大，即 $g_y=[1,0,0]$。反向 $g_s=J^T\cdot g_y$ = $J$ 第一行：
 
-```
-g_s = [0.082, -0.022, -0.060]
-```
+$$
+g_s = [0.082,\,-0.022,\,-0.060]
+$$
 
-含义：要增大 `y₁`，应**增大 `s₁`、减小 `s₂` 和 `s₃`**（把 `s₁` 相对抬高）。
+含义：要增大 $y_1$，应**增大 $s_1$、减小 $s_2$ 和 $s_3$**（把 $s_1$ 相对抬高）。
 
 ### 实际代码不构造这个矩阵
 
-概念上"乘以 J^T"，但 softmax 雅可比有闭式化简，实际用公式（不建 30×30 矩阵再乘）：
+概念上"乘以 $J^T$"，但 softmax 雅可比有闭式化简，实际用公式（不建 $30\times30$ 矩阵再乘）：
 
-```
-g_s_j = y_j · ( g_y_j − Σ_i y_i · g_y_i )
-```
+$$
+g_{s_j} = y_j\cdot\left(g_{y_j} - \sum_i y_i\,g_{y_i}\right)
+$$
 
-> **一句话**：雅可比矩阵 = 向量函数的导数，`J_ij` 说"输出 `i` 受输入 `j` 多大影响"。反向传播过 softmax 需要它，是因为 softmax 每个输出都耦合依赖所有输入，不像逐元素运算那样可对角化简。
+> **一句话**：雅可比矩阵 = 向量函数的导数，$J_{ij}$ 说"输出 $i$ 受输入 $j$ 多大影响"。反向传播过 softmax 需要它，是因为 softmax 每个输出都耦合依赖所有输入，不像逐元素运算那样可对角化简。
 
-## 在本项目中的体现
+## 相关页
 
-- `∂L/∂W_Q` 的完整反传链是 [[ContextTransformer]] / [[DetailTransformer]] 训练时的核心
-- 训练用 [[TrainingMechanics|Adam]] + Noam 调度执行更新
-- `L_foot` 脚滑损失对接触 `ĉ` 做 `.detach()` 切断梯度，正是"用雅可比/反向规则时要小心哪条路该断"的实例（否则网络会把 `ĉ` 学成恒 0 来作弊）
-- 后处理 ψ（`anim_post_process`）在推理时用，不参与训练梯度
+- [[NeuralNetworkBasics]] —— 神经元/MLP 基础与梯度下降/SGD 更新式
+- [[Backpropagation-Transformer]] —— 项目视角：从 Loss 传回 $W_Q$ 的完整反传链
+- [[TrainingMechanics]] —— 拿到梯度后的优化器（Adam）与归一化

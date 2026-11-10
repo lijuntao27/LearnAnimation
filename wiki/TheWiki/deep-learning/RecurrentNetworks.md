@@ -85,6 +85,8 @@ $h_3$ 里 $x_1$ 的路径是 $x_1 \to h_1 \to h_2 \to h_3$，经过 $W_{hh}$ 两
 
 每个门是学出来的 $0\sim 1$ 数值（sigmoid），像可调阀门。LSTM 让"记住久远信息"变**可学**，是 RNN 的补丁，但**没改变"逐步循环、有损压缩、不能并行"三个根本问题**。
 
+> 门控单元（LSTM/GRU）的递推公式与直觉详解见 [[RNN-LSTM-GRU]]。
+
 ## ERD-QV 的结构（论文的 RNN 对比基线）
 
 ERD-QV（Robust Motion In-betweening, Harvey 2020）在 `model/rmi.py`：
@@ -158,3 +160,11 @@ Encoder-Decoder 是一种**结构范式**，不是具体网络：
 | [[Transformer]] | 30 帧同时喂入，注意力让每帧直接看所有帧 | 能变长有序、并行快、全局视野、长程不遗忘 |
 
 **一句话**：MLP 是"无结构的函数逼近器"，RNN 是"靠记忆向量传时序的串行网络"，Transformer 是"靠注意力直接跨帧通信的并行网络"。补间任务需要全局规划 + 变长 + 速度，所以 Transformer 胜出。
+
+---
+
+## 参考资料
+
+- 中文全译本（Wikipedia「Recurrent neural network」词条，逐节翻译 + 公式 LaTeX）：[[Recurrent_neural_network-中文翻译]]
+- 单元级原理（RNN/LSTM/GRU 门控详解，以机器翻译为例）：[[RNN-LSTM-GRU]]
+- 英文原版 PDF（本地）：`RawSource/articles/Recurrent_neural_network.pdf`

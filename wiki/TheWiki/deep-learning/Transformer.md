@@ -184,7 +184,7 @@ Step 7: decoder MLP  Y = W2_dec·PReLU(W1_dec·H_final+b1)+b2 ∈ R^(30×135)
 
 **核心观察**：姿态从 135 维被抬到 512 维特征空间，在 512 维里经 6 轮"跨帧混合 + 逐帧变换"，最后投影回 135 维。**形状始终是 30×N，只是 N 在 135↔512 间切换**；attention 不改形状，只把每帧的 512 维特征用别的帧的信息"刷新"。
 
-> 参数 vs 运行时算的：学出来的参数有 `W_Q,W_K,W_V,W_O`（每层 ×6）、FFN 的 W、encoder/decoder MLP、PE 生成 MLP、LayerNorm γ/β；运行时算的（随输入变）有 `Q,K,V`、`S=Q·K^T`、`A=softmax(S)`、输出。`W_Q` 固定，`A` 随输入变——input 相关性全来自 `H` 流入 `Q`/`K`，参数本身不动。详见 [[SelfAttention]] 与 [[Backpropagation]]。
+> 参数 vs 运行时算的：学出来的参数有 `W_Q,W_K,W_V,W_O`（每层 ×6）、FFN 的 W、encoder/decoder MLP、PE 生成 MLP、LayerNorm γ/β；运行时算的（随输入变）有 `Q,K,V`、`S=Q·K^T`、`A=softmax(S)`、输出。`W_Q` 固定，`A` 随输入变——input 相关性全来自 `H` 流入 `Q`/`K`，参数本身不动。详见 [[SelfAttention]]、[[Backpropagation-Transformer]]（W_Q 梯度实例）与 [[Backpropagation]]（通用机制）。
 
 ## 在本项目中的体现
 

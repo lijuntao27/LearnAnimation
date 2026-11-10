@@ -1,0 +1,1541 @@
+
+
+===== PAGE 1 =====
+
+Eurographics Symposium on Geometry Processing 2025
+M. Attene and S. Sellán
+(Guest Editors)
+COMPUTER GRAPHICS forum
+Volume 44 (2025), Number 5
+Real-Time Secondary Animation with Spring Decomposed Skinning
+B. Akyürek
+and Y. Sahillio˘glu
+Dept. of Computer Engineering, Middle East Technical University, Turkey
+bartu.akyurek@metu.edu.tr, ys@ceng.metu.edu.tr
+Figure 1: Our method extents to a wide range of dynamics including secondary motion on composite rigid bodies (e.g. plant leaves), stretch
+and squash on elastic bodies (cow, rubber duck), jiggling of soft bodies (fat tissues), global secondary motion (vibrating elephant), and cloth
+animation.
+Abstract
+We present a framework to integrate secondary motion into the existing animation pipelines. Skinning provides fast computation
+for real-time animation and intuitive control over the deformation. Despite the benefits, traditional skinning methods lack
+secondary dynamics such as the jiggling of fat tissues. We address the rigidity of skinning methods by physically simulating the
+deformation handles with spring forces. Most studies introduce secondary motion into skinning by employing FEM simulation
+on volumetric mesh vertices, coupling their computational complexity with mesh resolution. Unlike these approaches, we
+do not require any volumetric mesh input. Our method scales to higher mesh resolutions by directly simulating deformation
+handles. The simulated handles, namely the spring bones, enrich rigid skinning deformation with a diverse range of secondary
+animation for subjects including rigid bodies, elastic bodies, soft tissues, and cloth simulation. In essence, we leverage the
+benefits of physical simulations in the scope of deformation handles to achieve controllable real-time dynamics on a wide
+range of subjects while remaining compatible with existing skinning pipelines. Our method avoids tetrahedral remeshing and
+it is significantly faster compared to FEM-based volumetric mesh simulations.
+CCS Concepts
+• Computing methodologies →Animation; Physical simulation;
+1. Introduction
+Rigid bodies in nature often exhibit oscillatory motion, referred to
+as secondary dynamics, arising as a response to initial primary mo-
+tion. Soft bodies also have a similar motion as they jiggle under
+force. Despite being widely used in animation, skinning methods
+remain too stiff to exhibit such dynamics on both soft and rigid
+bodies. To emulate dynamic deformation, researchers have been
+developing physical simulation techniques. The lack of realism in
+skinning methods has been compensated by physically simulating
+the material through mesh vertices; however, incorporating physics
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 2 =====
+
+2 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+into mesh deformation might involve complex implementations.
+Additionally, many physical deformation schemes are dependent
+on the mesh resolution. Tetrahedral meshes are also commonly re-
+quired for FEM simulations as in [HMT∗12, IKNDP16, ARF15,
+ZZCB21,CGC∗02,HTC∗13,RF14,MZS∗11,KB18,KBB∗17]. As
+a result, these approaches significantly increase the computational
+costs for finer resolution. Another drawback is that controlling the
+results of physical simulation is limited; hence, physical simula-
+tion deformation methods remain mostly unintuitive compared to
+skinning.
+Introducing plausible dynamic effects while preserving the pri-
+mary intuition behind skinning remains an open area of research.
+Spring Decomposed Skinning (SDS) tackles this problem by intro-
+ducing physics in the scope of skinning bones. With this approach,
+SDS combines fast computation and intuitive user control advan-
+tages of skinning with the plausible dynamics of physical simula-
+tions.
+We use spring forces to simulate dynamic motion in skeletal
+bones, referred to as spring bones. These forces are modeled using
+Hookean springs due to their sinusoidal behavior (for the jiggling
+secondary motion) and computational efficiency. However, despite
+their simplicity, Hookean springs can suffer from numerical insta-
+bility, caused by a time-stepping scheme, particularly under large
+time steps [WB01]. In addition, they are only conditionally sta-
+ble and require carefully chosen initial parameters [MHTG05]. To
+address these stability issues, we adopt a Position-Based Dynam-
+ics (PBD) framework [MHHR07] and we further impose kinematic
+constraints to ensure intuitive skeletal movement.
+Our method takes an articulated character animation as input,
+including a rest-pose mesh, its rig, and keyframes of the rig, and
+allows the user to specify which bones should be simulated as
+spring bones. Optionally, we utilize helper bones as an addition
+to the primary skeleton, allowing the user to localize the dynamics
+on smaller surfaces. With this pipeline, we introduce dynamics on
+existing animation, introducing a small overhead to the traditional
+skinning pipeline. Our method is simple yet capable of capturing a
+diverse range of dynamic motion. Skinning at its heart is a decom-
+position of complex surface deformation to a limited set of bone
+transformations. Following this intuition, we decompose dynamic
+mesh surface deformation into a linear combination of spring mo-
+tions. We also provide the source code at https://github.com/
+bartuakyurek/Spring-Decomposed-Skinning.
+1.1. Contributions
+Spring bones are dynamic as their motion depends on the current
+time and configuration. On the other hand, the existing geometric
+skinning methods remain static as they require additional manual
+keyframe input to produce the same motion. Despite the additional
+keyframes, our computed dynamics can be quite cumbersome to
+replicate with manual labor. In essence, our method provides a con-
+trollable physical simulation scheme through rigging.
+Unlike common approaches, our framework does not require
+volumetric mesh input or anatomical primitives. As a result, SDS
+is highly compatible with existing animation pipelines. Volumet-
+ric mesh simulations are generally dependent on the mesh resolu-
+tion. In contrast, our framework scales to higher mesh resolutions
+by limiting the physical simulations to rig handles, providing fast
+computation of dynamic motion.
+The main contributions of our proposed framework Spring De-
+composed Skinning are as follows:
+• Provide artistic control over physical simulations through defor-
+mation handles. These handles achieve both global and local
+secondary motion over diverse subjects including rigid bodies,
+soft tissues, and cloth surfaces.
+• Decompose dynamic surface deformation into a linear combi-
+nation of simple spring oscillations, which aligns with the core
+intuition behind skinning.
+• Achieve real-time dynamic deformation on a broad range of 3D
+models without requiring computationally complex tetrahedral-
+ization.
+• A method to compute Inverse Kinematics-like transformations
+of the dynamically posed skeleton bones.
+• An
+easy-to-integrate
+framework
+into
+existing
+animation
+pipelines, compatible with traditional skinning input and output.
+• Formalize a framework around the "jiggle bones" construct,
+closing the gap between industry applications and academic re-
+search.
+2. Related Work
+Skinning Decomposition is a term introduced in [KSO10] to find
+bone transformations and bone-vertex binding weights from exam-
+ple poses. [LD12] decomposes a set of example poses into rigid
+transformations. Even though this study is not focused on example-
+based decomposition, we are still interested in decomposing dy-
+namic poses into a set of bone transformations.
+Geometric skinning approaches such as LBS commonly suffer
+from rigidity in character motion and commonly lack dynamic ef-
+fects such as jiggling, swaying, muscle bulging, or elastic deforma-
+tions [RF16,WLP∗17,Muk15]. Researchers have been developing
+solutions to bring more life into skinning frameworks and increase
+the expressiveness of animations.
+Blendshapes deformation studied in various studies such as
+[KBB∗17], [LMR∗23], [MWF∗12], is useful when the expres-
+siveness of skinning methods falls short, e.g. for facial expres-
+sions where the surface is highly complex. In addition to skinning
+pipelines, our framework can be also integrated with blendshapes
+deformation.
+Anatomical models, including [KBB∗17, LST09, RRC∗18,
+AS07], utilize the underlying anatomy of bones and muscles to en-
+able highly realistic deformation. However, these methods are com-
+plex to implement and sophisticated anatomical knowledge might
+not be available for a given mesh.
+Example-based methods are employed in numerous studies
+such as [SZT∗08, MG03, Muk15] to introduce realistic dynam-
+ics. A significant number of papers such as [ZZCB21, MMRH22,
+YWM∗21, SGOC20, CO18, PMRMB15, JHG∗22] also extend the
+example based approach by making use of neural networks. Several
+studies including [SGX∗21, SGXT20, BRPMB17], utilize motion
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 3 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+3 of 14
+capture technology. Despite their plausible dynamic results, mo-
+tion capture technology remains an expensive solution. In addition,
+the scope of example-based approaches is limited to the dataset and
+it is another challenge to generalize the dynamics. In contrast, our
+framework proposes a general framework that can be applied to
+versatile subjects without additional dataset costs.
+FEM-based methods such as [CBC∗05, CGC∗02, HMT∗12]
+employ physical simulation to compute dynamic motion occurring
+under external forces such as wind, gravity, and collisions. Many
+papers, including [HMT∗12,IKNDP16,ARF15,ZZCB21,CGC∗02,
+HTC∗13, RF14, MZS∗11, KB18, KBB∗17, TRPO21], incorporates
+FEM simulation into skinning pipeline through a volumetric tetra-
+hedral mesh. Despite the achieved dynamic effects, tetrahedraliza-
+tion is computationally expensive and is not trivial for some geom-
+etry. Time complexity is also a bottleneck especially for the higher
+mesh resolutions, making high-resolution tetrahedral FEM not suit-
+able for real-time applications. In this work, we avoid complex
+tetrahedralization to achieve both scalable and controllable dynam-
+ics.
+Complementary Dynamics [ZBLJ20, BZC∗23] introduce sec-
+ondary motion that does not undo the deformation produced by
+the geometric methods. To this end, an orthogonality constraint
+between the rigid motion and the computed secondary motion is
+injected. Similarly, several papers have also utilized an orthog-
+onality constraint for dynamic deformation as in [CBC∗05] and
+[WU23]. [TRPO21] represents soft-tissue dynamics as deviations
+from parametrized skeleton motion. A limitation of complemen-
+tary dynamics is that they do not fully cover the range of secondary
+motion, particularly when objects exhibit additional jiggling in the
+same direction as their primary motion. Shaking a plant pot (Figure
+9) results in jiggling in both complementary and primary spaces. In
+this sense our secondary animation can be utilized to both produce
+complementary motion and to exaggerate the primary motion; we
+call them local and global dynamics respectively.
+Mass-spring systems are used in rope, cloth and garment
+animation [LBOK13], hair [SLF08], and soft tissue simulation
+[Gol18], and mesh unfolding [SK16]. Several works [NT98,
+LST09,KHS01,TT93,MHYH17] utilize mass-spring networks on
+muscular anatomy or in between muscle and skin tissues for real-
+istic deformations. [KB18] uses spring constraints on tetrahedral
+edges for a physics-based character skinning, while [LTW95] uses
+layered mass-spring networks to simulate soft tissues for realis-
+tic facial expressions. [JHG∗22] augments a quasistatic neural net-
+work with analytically integrated zero-restlength springs to capture
+dynamic deformation, especially for human soft tissue dynamics.
+Other methods include [vFTS07], which defines a limited number
+of mass-spring sets to achieve elastic deformations, and [WLP∗17],
+which uses mass-spring networks to deform 2D illustrations. Al-
+though not directly a mass-spring system, [DJBDT10] proposes
+physically simulated dynamic curves with mass and stiffness pa-
+rameters for jiggling 2D animation. In [TN19], Toothman and Neff
+introduce the notion of spring rigs by adding helper rigs between
+primary rig and mesh vertices. In their work, Toothman and Neff
+statically correct skinning artifacts in post-processing via spring
+forces. In contrast, we utilize spring rigs for dynamic motion in
+skeletal subspace.
+Helper bones are utilized in [CM24, Muk15, MK16, Muk18,
+MG03] to emulate nonlinear deformation such as muscle bulging
+and tissue jiggling, that are not achievable by an intuitive rig. In-
+spired by these studies, we utilize helper bones to widen the range
+of dynamics we achieve. As an extension to helper bones studies
+focusing on helper bones individually, we allow chains of helper
+bones to achieve local soft tissue jiggling and cloth dynamics. We
+also show that helper bones are not only useful for tissue deforma-
+tions but also for a wider range of dynamics.
+Rig-level physics methods provide a deformation framework
+driven by rig parameters. One of the pioneering works that han-
+dles physical forces on rig-level is Velocity Skinning by Rohmer et
+al. [RTK∗21]. In Velocity Skinning, the bones are associated with
+an additional set of weights based on their velocities, to be used
+in the underlying skinning pipeline. These extra weights allow dy-
+namic floppy and squashy deformation. [GBFP11] also combines
+the accuracy of physical deformation with skinning handles. Build-
+ing on Velocity Skinning, [SRKZ24] injects a time-varying signal
+into skinning space to capture oscillatory secondary motion. This
+signal, modeled as a damped sinusoidal, effectively represents a
+single one-dimensional spring. In our approach, we directly sim-
+ulate skinning bones as a spring that enables chains of springs to
+produce more complex secondary motion. Another study unify-
+ing physics with skinning deformation was recently conducted by
+Wu and Umetani [WU23] on 2D triangulated surfaces or 3D tetra-
+hedral meshes. Our method is also driven by the rig parameters,
+unifying physical simulation with skinning pipelines. SDS distin-
+guishes itself by directly simulating the bones, providing artistic
+control over the physical deformation simply through the skeleton.
+Physics-based deformation has also been shown to be useful for
+surface reconstruction purposes [YS09,SY10,BL21].
+Several
+works
+with
+volumetric
+mesh
+simulations
+also
+parametrize
+skeletal
+motion
+in
+their
+physical
+deformation
+pipeline. [CGC∗02] utilize a coarse volumetric mesh to introduce
+elastic deformation driven by skeletal animation. In [HTC∗13], rig
+parameters are used as degrees of freedom in physical simulations
+on a volumetric mesh. Similarly, in Rig-Space Physics [HMT∗12],
+the rig parameters determine the stiffness parameters of the un-
+derlying FEM-based elastic deformation, augmenting the physical
+simulation with skeletal animation. As a disadvantage, these
+frameworks might require extra cumbersome weight painting and
+texture mapping work to convert an existing animated model into a
+volumetric input. Our method avoids such remeshing steps and can
+readily be used to add dynamics to an existing animated character.
+Jiggle bones are known in the industry to some extent, with
+one of the most recent uses of jiggle bones is by the game God
+of War Ragnarök where the developers have used helper bones to
+produce tissue jiggling and muscle bulge by the help of anatomic
+heuristics [Wan23]. However, to the best of our knowledge jiggle
+bones are not directly introduced in skinning literature although
+similar works such as [MK16] exist. In this work, we propose a
+basic framework of spring bones skinning to leverage both the re-
+alism of physical simulations and the speed of traditional skinning,
+which has been a gap between industry applications and academic
+research. Albeit simple, the method is effective and popular, and
+has a positive impact on game development.
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 4 =====
+
+4 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+3. Method
+Given a rigged model and its animation keyframes, Spring Decom-
+posed Skinning (SDS) defines a simple framework to simulate the
+rig bones. Initially, the user selects specific rig bones to be treated as
+spring bones. These bones include primary bones and helper bones.
+After an initial configuration, our method automatically computes
+the dynamic bone locations throughout the animation sequence.
+Primary bones are typically part of the original rig that drive the
+main motion, such as the arms and legs of a human skeleton. In
+contrast, helper bones are auxiliary bones introduced by the user,
+intended to localize secondary motion to smaller regions, typically
+used for soft tissue dynamics. As a rule of thumb, primary bones are
+converted to spring bones when global secondary motion is desired,
+i.e. oscillations resulting from the rig’s main motion. Helper spring
+bones, on the other hand, are added when local secondary motion
+is needed, such as to simulate the jiggling of belly fat.
+We define a spring bone with a spring attached to two masses lo-
+cated at both tips of the bone as in Figure 2. The first mass, namely
+fixed mass, is located at the bone head and its position remains
+unchanged throughout the mass-spring simulation. Only kinematic
+constraints and user-defined keyframes update these fixed mass lo-
+cations. The second mass, namely free mass, is placed at the bone
+tail and the simulation updates its position dynamically at every
+frame.
+Spring rest length can be adjusted by the user via positioning
+the fixed mass along the bone, from bone head to tail. At its ex-
+treme, both the fixed mass and free mass are located at the bone
+tail, creating a point spring bone. Converting primary bones into
+point spring bones enables squash and stretch deformations, where
+secondary motion enhances the expressiveness of primary motion
+as in Figure 15.
+We introduce the notion of fixed and free masses to emulate
+skeletal dynamics in a way that aligns with the intuition of skeletal
+animation. Unlike classical mass-spring networks, where all par-
+ticles are updated during simulation, we maintain the hierarchical
+structure of a skeleton by fixing the first mass of each spring. This
+fixed mass preserves its orientation relative to its parent and is not
+updated during the mass-spring simulation. Instead, its position is
+driven by rigid skinning transformations and kinematic constraints,
+which are discussed in the following sections. This design pre-
+serves the parent-child relationship of skeletal trees, where each
+bone (except the root) is oriented relative to its parent.
+At each frame, we simulate the free masses and update the rig
+bone orientations accordingly. Let B0 : {B0
+i } be the set of bone ori-
+entations B0
+i ∈R2×3 in the rest pose, including locations of bone
+head and tail. Similarly, let BR and BD be the set of rigid and dy-
+namic bone orientations respectively. Rigid bone transformations
+computed by forward kinematics MR : B0 →BR maps the rest pose
+to the rigid pose. Based on the initial settings and the rig pose at a
+given frame, our framework dynamically updates the rig pose and
+computes the dynamic bone transformations MD : BR →BD to be
+used in the underlying skinning method.
+Figure 2: Placement of a mass-spring system along a skeletal bone.
+The fixed mass is driven by rigid animation keyframes, while the
+free mass is updated via dynamic simulation at each timestep. The
+spring rest length is determined by the fixed mass position; trans-
+lating the fixed mass along the bone axis reduces the rest length. In
+the extreme configuration, both the fixed and free masses are po-
+sitioned at the bone’s tail, connected via a zero rest length spring,
+which forms a point spring bone.
+3.1. Simulation
+We simulate spring bones as simple Hookean springs with a Po-
+sition Based Dynamics (PBD) framework [MHHR07]. Initially,
+the user determines system parameters including spring stiffness
+ks ∈R, damping kd ∈R, and mass m ∈R to be used in mass-
+spring simulation. For each particle pi, the initial position xi is set
+according to the rest pose, and the initial velocity is set to v0
+i = 0.
+For PBD algorithm, we also store the inverse masses as wi = 1/mi.
+At each frame, all masses are first displaced by forward kinemat-
+ics as in traditional skinning pipelines. Then, our mass-spring sim-
+ulator updates free mass positions based on Hookean spring forces
+and mass velocities (steps 3-4 in Figure 5).
+Let p1,p2 ∈R3 be the particle positions attached to both ends
+of a spring, v1,v2 ∈R3 their velocities respectively, and l0 be the
+spring rest length. We have the spring vector p1,2 = p2 −p1 and
+normalized spring vector n =
+p1,2
+∥p1,2∥. Hookean spring force fs and
+damping force fd acting on p1 is given by:
+fs = ks(
+p1,2
+−l0)n
+(1)
+fd = −kd[n·(v2 +v1)]n
+(2)
+For the other particle p2, the spring force is taken as −fs. We take
+the total external forces as f = fs +fd to be used in PBD framework.
+Note that in Equations 1 and 2 additional bending of a spring is not
+represented; that is, spring bones move in a linear trajectory with
+only affine transformations. However, bending phenomena emerge
+when using spring chains, where parent-child relationships allow
+the chain to bend. This occurs because child bones inherit both the
+rotations of their ancestors and their own rotations, which are in-
+ferred after the free masses are relocated via simulation.
+Algorithm 1 takes all the mass positions X in a rig and updates
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 5 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+5 of 14
+Algorithm 1 PBD-based Simulation
+Require: X : {xi ∈R3}
+1: for all particles i do
+2:
+if mi is 0: continue
+3:
+vi ←vi +∆twifi
+4:
+vi ←dsvi
+5: end for
+6: forall particles i do pi ←xi +∆tvi
+7: if stretch_constraints
+8:
+˜pi ←projectStretchConstraints(p1,...,pN)
+9: endif
+10: for all particles i do
+11:
+vi ←(˜pi −xi)
+12:
+xi ←˜pi
+13: end for
+the free mass locations for a single iteration with time step ∆t. In
+line 2, we skip the simulation if a particle is fixed in the system, i.e.
+its mass is zero. In line 4, parallel to PBD algorithm, we provide
+parameter ds to further damp the particle velocities v ←dsv that is
+a parameter for 3D artist to adjust for desired effects. In our experi-
+ments, we used velocity damping in range 0 < ds < 1 for plausible
+dynamics.
+Note that the external forces can include gravity and other con-
+tact forces. However, in our experiments we typically omit gravita-
+tional acceleration and contact forces, focusing solely on the effects
+of spring forces. For instance in Figure 3, lower stiffness ks causes
+slower motion whereas higher stiffness abruptly vibrates the spring
+bone and returns faster to rest length in a stable system.
+ks = 10
+ks = 300
+Figure 3: Effect of spring stiffness on convergence behavior. In-
+creasing spring stiffness ks leads to faster convergence toward the
+rest length.
+Since we limit our scope to spring forces and avoid other ex-
+ternal forces, we skip the collision constraints in PBD algorithm.
+Instead in lines 7 −9, we optionally provide stretching constraints
+(see [BMOT13]), to project spring bones back to their original
+length after the initial velocity and particle update. The constraints
+in line 8 are projected as ˜pi ←pi + ∆pi where ∆pi is the correc-
+tion vector. For a single spring, we use stretching correction vec-
+tors ∆p1 and ∆p2 as described in [BMOT13]. In our experiments,
+we typically perform a single iteration to optionally project stretch
+constraints.
+Let p be the mass positions are updated with explicit Euler in-
+tegration. Following PBD algorithm, the first set of constraints are
+projected as p ←p+∆p where ∆p is the correction vector in line 8.
+For each particle at pi connected to p j with a spring, the correction
+vector is defined as:
+∆pi =
+wi
+wi +w j
+(
+pi,j
+−l0) pi,j
+pi,j
+
+(3)
+Despite PBD framework being unconditionally stable, project-
+ing stretching constraints often does not produce plausible jiggling
+bones. To improve the resulting dynamics, we further project con-
+straints after a PBD-based simulation that is explained in Section
+3.2.
+(a)
+(b)
+(c)
+Figure 4: Effects of constraints on Monstera plant rig motion. Blue
+represents spring bones. A rigid white bone is rotated side by side
+to jiggle the bones. (a) Stretch constraint causes a circular motion.
+(b) Our kinematic constraints projected inside PBD framework re-
+sult in vibrations and fail to produce smooth jiggling motion. (c)
+Kinematic constraints projected outside of PBD framework pro-
+duce more plausible jiggling.
+3.2. Kinematic Constraints
+Once our simulator in Algorithm 1 updates the free mass locations,
+the connections between a bone tail and its children bone heads
+are broken since fixed masses are not simulated (step 4 in Figure
+5). Hence, to ensure bone connectivity, we project additional con-
+straints based on the rig’s kinematic tree.
+When our kinematic constraints are projected inside a classical
+PBD framework, they result in abrupt vibrations (Figure 4b). In
+contrast, when applied after the simulation loop, these constraints
+produce more plausible jiggling effects (Figure 4c). Furthermore,
+using only the stretch constraint results in an extra circular motion
+that might not be desirable (Figure 4a). Therefore, we provide ad-
+ditional user option fixed_scale to preserve rest bone lengths
+after simulation. Projecting these constraints after the PBD-based
+simulation avoids unintuitive vibrations and results in smoother rig
+dynamics.
+The steps we follow to restore bone connectivity and rest bone
+lengths are illustrated in Figure 5. In Steps 1-4 the rig is posed with
+forward kinematics and mass-spring systems are simulated. From
+Step 4 to 5, if the user enables fixed_scale option, the spring
+bone is scaled back to its rest pose length (Algorithm 2 lines 2−6).
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 6 =====
+
+6 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+Then, the descendant bones are translated to their rest pose orien-
+tations (Algorithm 2 lines 7−11); i.e. if they were fully connected
+the children bones are moved to their parent’s tail, or if they were
+unconnected, they are moved with an offset (line 9).
+Algorithm 2 Kinematic Constraints
+Require: B0,KB,B
+1: for all bones i do
+2:
+if fixed_scale then
+3:
+l = ∥B1i −B2i∥
+4:
+d = (B1i −B2i)/l
+5:
+B2i ←(l −l0)d
+6:
+end if
+7:
+for all children j ∈KB(i) do
+8:
+B j = B2 j −B1 j
+9:
+B1 j ←B2i +t j
+10:
+B2 j ←B1 j +B j
+11:
+end for
+12: end for
+In Algorithm 2, B0 is the rest bone locations and Bi = (B1i,B2i)
+is the bone at index i with its head and tail located B1i,B2i ∈R3
+respectively. KB is the kinematic relations KB : {(Bi,B j)} where in
+every tuple Bi is the parent bone of B j. Lastly, B denotes the bones
+in the posed space. In our case, B is the bone orientations after the
+simulation.
+Figure 5: Steps to preserve rest bone lengths and connectivity in
+a toy case. First box is the rest pose. User applied rotation rotates
+the bone chain through forward kinematics in the dotted box. Last
+box is the dynamically posed bone chain where original length and
+connectivity are preserved.
+3.3. Skinning Transformations
+In skinning, underlying bone transformations determine the mesh
+deformation. Once we simulate the spring bones, we need to in-
+fer the necessary bone transformations that are given to skinning.
+In this work, we adopt the most widely used skinning method,
+linear blend skinning (LBS), as our underlying skinning method.
+Let v0
+j ∈R4×1 be rest pose vertex in homogeneous coordinates,
+Mi ∈R4x4 be the bone i’s transformation matrix and wi j be the
+(a)
+(b)
+(c)
+(d)
+Figure 6: Comparison of simulation constraints on skinning de-
+formation. (a) Unconstrained. (b) Only stretch constraints. (c) Our
+constraints. (d) Rigid LBS.
+binding weight between bone i and vertex j. Deformed vertex lo-
+cation vj in homogeneous coordinates can be defined as:
+vj =
+N
+∑
+i=0
+wi jMiv0
+j
+(4)
+Figure 7: The procedure to compute chained affine transforma-
+tions. Rest pose bone (source) and posed bone (target) is given
+in the first box. Our goal is to find a transformation M that maps
+source line segment to target line segment. At the last box the source
+line segment is aligned with the target segment after Rotate-Scale-
+Translate affine transformations are applied.
+In traditional skinning pipelines, bone transformations Mi are
+directly computed via underlying kinematics, either by forward or
+inverse kinematics, after the user poses the skeleton bones. In our
+case, the user input transforms are altered once the spring bones are
+simulated. Therefore, our problem is to find a new transformation
+M∗
+i : B0
+i →BD
+i to pose the rest pose bones into their dynamically
+posed locations.
+To compute the dynamic bone transformations, we decompose a
+matrix M∗
+i into its individual affine transformations: Rotate, Scale,
+Translate (RST). In Figure 7 steps to find affine transformations
+are illustrated. In the end, necessary transformation matrices Mi of
+each bone i are computed for Equation 4. Intermediate steps of the
+computation are provided in Appendix A.
+3.4. Implementation
+Our method takes traditional skinning input: a surface polygonal
+mesh, a rig, and keyframe poses of the rig. Given the keyframe
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 7 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+7 of 14
+(a)
+(b)
+(c)
+(d)
+Figure 8: Comparison of different bone transformations. (a) SVD-
+based Least-Squares Rigid Motion [SHR17] is used to map rest
+pose to dynamic pose. Note that this algorithm requires at least 3
+points to produce the optimal rigid motion; therefore, we used bone
+endpoints as well as its midpoint to match 3 points of a rest pose
+bone to a dynamically posed bone. (b) Only bone tail translations
+are fed in the skinning. Notice that this approach can be plausible
+for irregular shapes (top) but fails to produce smooth deformation
+for a flat surface (bottom). (c) Our proposed RST transformation.
+(d) Rigid LBS.
+poses, we use linear interpolation to obtain the corresponding rig
+pose at each frame. The user decides which bones are spring bones
+and specifies their mass-spring parameters. Alternatively, similar
+to [MK16], we also use helper bones to extend the primary rig to
+simulate local dynamics. Computationally, these helper bones are
+treated as regular bones, differing only in their artist-determined
+rest pose orientations.
+Following the concept of orthogonal forces represented in Com-
+plementary Dynamics [ZBLJ20], the helper spring bones are de-
+signed to complement the existing rigid rig. To this end, most helper
+bones are placed nearly orthogonal to the bones responsible for pri-
+mary motion.
+Algorithm 3 Overall flow of our pipeline
+Require: V 0, W, B0, KB, θ, D, γ
+1: initialize_simulator(B0, D, γ)
+2: for all frames t do
+3:
+θt ←θ(t)
+4:
+BR,MR ←forward_kinematics(B0, KB, θt)
+5:
+B∗←simulate(BR)
+6:
+BD ←kinematic_constraints(B∗, KB)
+7:
+MD ←get_bone_transforms(BD)
+8:
+M ←compose_transforms(MD, MR, D)
+9:
+V ←skinning(V 0, W, M)
+10: end for
+In Algorithm 3, spring bone indices D and parent-bone relations
+KB, mass-spring parameters γ : (ks,kd,ds,m) are given by the user
+together with rest shape V 0, binding weights W, rest pose bones
+B0 and the animation keyframes θ at the initialization stage. In line
+3, the bone poses θt for the current frame is taken and fed into
+forward kinematics in line 4. After simulating and projecting kine-
+matic constraints, we compute RST transformations in line 7. Once
+we obtain dynamic bone transformations, in line 8 we construct
+final bone transformations to be fed into the underlying skinning
+method. We keep the bone transformations MR obtained in forward
+kinematics for rigid bones and update bone transformations with
+MD only for spring bones. In the end, after the initial rig and mass-
+spring parameters setup, our pipeline automatically computes the
+dynamic bone orientations BD and vertex locations V.
+4. Results
+Spring bones achieve plausible dynamic motion over a diverse set
+of subjects, including rigid bodies, elastic bodies, soft tissues, and
+garment animation. For instance, a plant pot is a composition of
+rigid bodies. Under the motion, the plant leaves can rotate and
+translate; however, scaling is not allowed. To achieve such dynam-
+ics, we simulate the bones attached to leaves with spring bones
+under our fixed_scale option to preserve the original bone
+lengths.
+Figure 9: Skinning of a shaking Monstera plant pot. Top: LBS de-
+formation. White bones indicate rigid bones. Middle: Our dynamic
+deformation achieved with spring bones colored as blue. Single
+rigid white bone is left on the root that is responsible for shak-
+ing the pot. Bottom: Our deformation. Notice that the leaves are
+shaking side to side whereas the pot remains rigid. This is achieved
+via weight painting the pot area with 1.0 weights for the rigid root
+node.
+Note that for the plant, duck, and cloth animations in Figures 9,
+10, and 11, only the root bone is rotated by the user. Due to the
+forward kinematics, the same rotation is inherited by all of the de-
+scendant bones. This single rotation produces a stiff motion in LBS
+as expected. Given this input, our method automatically infers the
+dynamic motion in a single shot. Regardless of the underlying geo-
+metric skinning pipeline, our produced dynamics are cumbersome
+to replicate manually because the 3D artist would have to keyframe
+the rotations one by one for numerous frames. We generally use
+similar stiffness and damping parameters for our main results. For
+parameter details and to further inspect our secondary animation
+contributions, please refer to the supplemental video.
+We color-coded our results with the Euclidean distance differ-
+ence between the rigid deformation vertices and our deformation.
+Red regions indicate the largest Euclidean distance between LBS
+and ours, while blue regions represent zero distance where the de-
+formation exactly matches with LBS. Rest poses are given at the
+left of the figure, where rigid bones are colored white and spring
+bones are colored blue.
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 8 =====
+
+8 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+Figure 10: An elastic body example is demonstrated on the rubber
+duck model rotated back and forth. Top: LBS. Middle: Ours. Bot-
+tom: Ours color-coded in comparison to LBS. Our method achieves
+smooth dynamic motion as if the rubber duck is floating on water
+without simulating any contact forces.
+Figure 11: SDS applied on a piece of cloth rotated back and forth.
+Parallel chains of spring bones form an indented surface when the
+garment is deformed.
+4.1. Helper bones
+Converting existing rig bones to spring bones allows the user to
+impose global dynamics throughout the 3D character. Alternatively,
+adding spring helper bones to the original rig allows imposing local
+dynamics such as jiggling of fatty belly area, as a complementary
+motion.
+We test our method on the popular SMPL model for fat tissue jig-
+gling [LMR∗23]. We use pose sequences provided in the DFAUST
+dataset [BRPMB17] and obtain rigid deformation of these poses
+with the SMPL. Then, we set up helper bones extending the SMPL
+skeleton. Once our framework simulates the helper bones, we add
+the simulated motion on SMPL deformation to achieve soft tis-
+sue jiggling. (Figure 13-14). Unlike classical skinning, the SMPL
+model is defined on blendshapes. Therefore, for SMPL demonstra-
+tions we directly add the bone tail translations on the blendshaped
+mesh between each current frame t and the previous frame t −1
+such that bone i transformation is given by BD
+2i(t) −BD
+2i(t −1) for
+t ∈[1,...,N] where N is the number of animation frames and the
+first frame is taken as initial pose BD
+2i(0) = B0
+2i. We observe that the
+bone tail translations are enough to produce plausible jiggling in
+local areas; however, as seen in Figure 8, this approach can create
+artifacts on large flat surfaces.
+Helper bones are also handy for garment animation. We observe
+that adding parallel spring chains can approximate cloth dynamics
+as in Figure 11. A failure case is demonstrated in Figure 12 where
+a single spring chain fails to approximate the cloth surface. Both
+cloth rigs are bound to the cloth surface automatically with heat
+diffusion [BP07] weights.
+As an advantage, spring rigs enable more user control over the
+cloth deformation, as opposed to traditional cloth simulation where
+the user has limited control over the garment deformation. Tradi-
+tionally, the user can control the material properties by changing
+the mass and stiffness parameters; however, the computed result
+highly depends on the physical simulation. In our pipeline, the user
+has control over the physical simulation parameters (mass and stiff-
+ness parameters), and the rig parameters (placement and binding
+weights of primary or helper bones). These controls enable the user
+to achieve versatile dynamics and improve the degrees of freedom.
+Figure 12: SDS with a single spring chain fails to produce cloth
+dynamics.
+4.2. Comparison
+We provide a comparison with Fast Complementary Dynamics
+by Benchekroun et al. [BZC∗23] in Figure 18. We also com-
+pare our results with a recent paper by Wu and Umetani [WU23]
+which provides a framework for controllable skinning dynamics.
+In their work, Wu and Umetani simulate a tetrahedral mesh us-
+ing Position Based Dynamics (PBD) constrained in a complemen-
+tary subspace, inspired by Zhang et al.’s Complementary Dynam-
+ics [ZBLJ20]. Then, they infer the dynamic handle locations with
+inverse kinematics. Similar to our approach, Wu and Umetani aim
+to unify physical simulation with the skinning pipeline. However,
+their method is complementary to ours: they first simulate the mesh
+and then infer the handle locations, whereas we first simulate the
+rig and subsequently infer dynamically deformed vertices based on
+simulated bone transformations.
+In Figures 15 and 16, user input is applied to the yellow handles
+in LBS, and the same input is given to all the skinning methods.
+Green points indicate the free handles whose dynamic locations
+are computed via inverse kinematics and red points are the fixed
+handles in Wu and Umetani’s method. In our case, we use blue
+spring bones, particularly to simulate ears and trunk in Figure 16.
+Note that for the comparisons with [WU23], deformation is
+based on point handles. On the other hand, classical skinning ap-
+plications feature a skeleton hierarchy. Our RST algorithm is de-
+signed for the skeleton bones, assuming the bones have a positive
+length. Therefore, in these comparisons, we only use translations
+of the point handles for the skinning transformations. We observe
+that translations can be sufficient in local dynamics of non-flat sur-
+faces as also demonstrated on SMPL in Figure 13. We convert
+these point handles to point spring bones, creating a zero-length
+spring (Figure 2). Comparison in Figure 15 demonstrates how the
+point spring handles result in a global secondary motion. Addi-
+tional spring helper bones are required for localized soft tissue jig-
+gling, e.g. around the elephant ears and trunk in Figure 16.
+Simulating the tetrahedral mesh can introduce an unpredictable
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 9 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+9 of 14
+Figure 13: Helper spring bones (blue bones) are used as an addition to primary bones to simulate fat tissue dynamics. Top: animation with
+SMPL blendshapes. Bottom: our simulated bones’ motion is added on top of blendshapes deformation.
+Figure 14: The same helper spring bones in Figure 13 are used to simulate fat tissue dynamics for a different animation sequence. Top:
+animation with SMPL blendshapes. Bottom: our simulated bones’ motion is added on top of blendshapes deformation. Color coding indicate
+the highest to lowest change in vertex Euclidean distances with respect to top row.
+motion on the mesh (Figure 15). In comparison, our method re-
+mains controllable as it does not depend on the mesh vertices. Fur-
+thermore, inspired by Complementary Dynamics [ZBLJ20], Wu
+and Umetani (2023) introduce a complementary motion that is or-
+thogonal to the rigid motion. However, the resulting motion might
+not match the desired dynamics. For instance, in Figure 15, Spot
+the cow rocks back and forth; however, the complementary motion
+produces a side-to-side rotation of the cow’s head, resulting in an
+entirely different motion. In comparison, our point springs enhance
+the rocking motion by exaggerating the movement in the same di-
+rection.
+Another problem with Wu and Umetani’s tetrahedral simula-
+tion arises when detailed rigs are used (Figure 16, second and
+fifth row). In volumetric simulation, collapsing skinning artifacts
+often appear as cracks between neighboring tetrahedra. With de-
+tailed rigs, these artifacts become more frequent around closely po-
+sitioned bones, resulting in self-intersections and rapid volume loss
+across multiple springs. Under a time-stepping scheme, this condi-
+tion can cause abrupt changes in spring forces around the neighbor-
+hood and ultimately amplify spring forces. In Wu and Umetani’s
+framework, PBD simulation and inverse kinematics have a feed-
+back loop, prone to severe instabilities under these conditions. Ad-
+ditionally, detailed rig input increases stiffness in complementary
+dynamics (Figure 18, which contradicts the intuition of deforma-
+tion control through rigging. Since our method is based on rig sim-
+ulation, our dynamics remain mostly independent from mesh res-
+olution and controllable through handles. Lastly, tetrahedralization
+is not a trivial task to apply on existing animation as it requires
+the re-assembly of binding weights and texture, prone to excessive
+manual labor. As an advantage, our method allows working on shell
+meshes that can be easily adopted on existing rigged characters. In
+short, spring bones avoid the disadvantages of tetrahedral simula-
+tion and remain controllable and scalable for different mesh and rig
+resolutions.
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 10 =====
+
+10 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+LBS
+[WU23]
+Ours
+(a)
+(b)
+(c)
+Figure 15: Comparison for rocking motion. (a) LBS. (b) In
+[WU23], the fixed handles (red dots in the second row) are intended
+to limit the PBD simulation on the bounded vertices. Despite all
+the handles are being fixed and the leg handles are not moved dur-
+ing the animation, notice that the cow legs are still affected by the
+tetrahedral mesh simulation (detail box), which reduces user con-
+trollability over the animation. (c) Spring bones used in primary
+handles result in global stretch and squash dynamics.
+4.3. Timing
+Similar to LBS, our time complexity primarily depends on the num-
+ber of bones in the rig rather than the number of vertices. For exam-
+ple, deformation on the Duck model is faster than Cloth and Mon-
+stera models (Table 1) despite having a significantly larger number
+of vertices, due to having fewer rig bones. Note that in Table 1,
+SMPL deformation is faster because its demonstration does not in-
+clude skinning computations, i.e. simulated bone tail translations
+are directly added on top of blendshapes. For the rest of the models
+in Table 1, we use our RST algorithm to compute bone transforma-
+tions.
+Our method is approximately 10 times faster than [WU23] as our
+implementation mainly depends on the number of rig bones and
+avoids simulating the tetrahedral mesh vertices. For comparison,
+we also use additional helper bones for all the models in Table 2,
+doubling the number of total bones.
+Experiments were conducted on a 2.5 GHz Quad-Core Intel Core
+i7 processor with 16 GB of RAM. For both our results and [WU23]
+Figure 16: Comparison with a helper bone rig. Top 3 rows show
+how the rig moves during the animation and bottom 3 rows are
+their final mesh rendering results of LBS, Wu and Umetani (2023),
+and ours respectively. Rest poses are given on the left side.
+comparisons we use Python 3.9.18. Furthermore, our implementa-
+tion is dependent on NumPy 1.26.4 while Wu and Umetani’s im-
+plementation is dependent on Taichi 1.7.1.
+Model
+|V|
+|Bs|/|B|
+LBS (ms)
+Ours (ms)
+Cloth
+2025
+22/23
+5.26
+12.21
+Monstera
+4971
+23/24
+6.19
+14.11
+Duck
+12932
+5/6
+4.51
+9.50
+SMPL
+8541
+9/25
+N/A
+4.67
+Table 1: Per-frame average timings. |V| is the number of mesh ver-
+tices. |Bs| is the number of spring bones and |B| is the total number
+of bones in the rig. Note that SMPL model is based on blendshapes
+skinning, so that LBS is omitted from the table. The time required
+for rendering is not included.
+5. Discussions
+5.1. Methods in the Industry
+Industrial methods use jiggle bones to simulate secondary motions,
+specifically focused on animal tails, ponytail hair, or muscle jig-
+gling. [Wan23] constrain the spring motion within a cone, creating
+a controlled range for muscle jiggling. Unreal Engine also provides
+dynamic bones similar to those described by [Wan23].
+To the best of our knowledge, existing applications do not con-
+sider bone scaling. In contrast, we also provide the option to scale
+the bones which enables secondary motion globally such as squash
+or stretch, similar to Velocity Skinning, as shown in Figure 15.
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 11 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+11 of 14
+(a)
+(b)
+(c)
+(d)
+Figure 17: In LBS rigs, yellow handles are translated throughout the animation, dark blue handles are our spring bones simulated during
+the animation. (a) LBS. (b) Ours. Spring bones used as primary bones impose global dynamics such as floppy and squashy deformation. (c)
+LBS with helper bones around ears and trunk. (d) Ours with helper bones. Spring bone chains in helper bones impose local dynamics.
+(a)
+(b)
+(c)
+Figure 18: Comparison with Fast Complementary Dynamics [BZC∗23] (a) with a single handle (b) with a full rig (light blue bones). (c)
+Ours with a full rig where spring bones are colored blue. Notice that adding a detailed rig in [BZC∗23] severely reduces dynamics in the
+duck body attached to multiple bones, with secondary motion concentrated in the bottom plate attached to a single bone. Our method controls
+secondary motion via handles, i.e. keeping the bottom plate rigid through a single rigid bone, while the rest of the duck moves dynamically
+following the spring bones (see supplemental video).
+Model
+|Vtet|
+|B|
+LBS (ms)
+Ours (ms)
+[WU23] (ms)
+Spot
+837
+8
+1.15
+1.98
+20.73
+837
+15
+1.86
+3.45
+27.10
+Spot (HQ)
+1762
+8
+1.29
+2.40
+22.97
+1762
+15
+2.13
+4.05
+31.23
+Elephant
+8541
+25
+4.14
+7.87
+90.41
+8541
+47
+6.16
+11.91
+114.79
+Table 2: Timing measurements of comparison with volumetric
+mesh input in milliseconds. Note that the time required for ren-
+dering is not included. |Vtet| denotes the tetrahedral vertex count.
+|B| is the number of bones in the rig. Timings are averaged over
+500 frames. For consistency, all bones are taken as spring bones in
+ours, and fixed bones in Wu and Umetani’s method.
+The introduction of free and fixed masses and their kinematic con-
+straints allows us to define scaling or optionally preserve original
+bone lengths.
+On top of semi-implicit Euler method which results in similar
+motion in industrial applications, we utilize PBD with optional con-
+straints, which becomes useful for capturing localized dynamics
+such as belly fat jiggle in Figures 13 and 14. Overall this frame-
+work allows us to define local and global secondary dynamics that
+generalize to a broad range of applications.
+While tools like Unity and Blender also offer cloth dynamics for
+mass-spring simulation, these typically operate as classical simula-
+tions applied directly to mesh vertices. In contrast, our work intro-
+duces a skinning-based framework that generalizes secondary mo-
+tion by representing dynamic mesh deformation as a linear combi-
+nation of a small set of springs, rather than simulating each vertex
+independently.
+Although it is possible to create jiggle-bone effects in exist-
+ing tools by assigning parent-child relationships to vertex groups,
+Spring Decomposed Skinning formalizes this process into a uni-
+fied framework, providing a groundwork for future enhancements
+to secondary motion systems.
+5.2. Creative Workflow
+Our proposed framework is designed to be easily integrated into ex-
+isting skinning pipelines and can be rapidly applied within common
+3D animation software. In particular, a rigged animation sequence
+created in software such as Blender can be exported into our frame-
+work. Once the user selects the spring bones and sets the simulation
+parameters, they can achieve dynamic deformation in a plug-and-
+play fashion. Parameter settings shown in the supplemental video
+are largely consistent across different models.
+If necessary, users can add helper bones to drive local secondary
+motion. While this requires recomputation of binding weights, in
+most cases, automatic methods for vertex-bone binding are suf-
+ficient. Minimal weight painting may be needed to impose rigid
+material constraints, for instance, binding the pot of a plant to a
+rigid bone (Figure 9), or the bottom plate of the duck (Figure 18).
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 12 =====
+
+12 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+The presented results are primarily bounded by automatic heat dif-
+fusion weights. In specific models, including plant pot and duck,
+minimal weight painting is applied to control rigid material behav-
+ior; however, we avoid extensive weight painting and primarily rely
+on automatic weight computations to provide fast prototyping.
+5.3. Limitations and Future Work
+So far we have studied Hookean spring bones for their sinusoidal
+nature and simplicity. While the results are promising, our sys-
+tem inherits the primary limitations of Hookean spring forces. In
+[MHTG05], limitations of mass-spring systems are discussed. Es-
+sentially, mass-spring systems are sensitive to chosen parameters
+and incorrect parameter settings can cause instability. Even with an
+unconditionally stable framework such as PBD, exploding forces
+still exist. This is also because our system is position-based, rather
+than force-based. That is, the user directly determines the bone po-
+sitions instead of applying forces that influence them. Therefore,
+the force required to move the rig from one orientation to another
+can explode depending on the system parameters. In future work,
+more robust spring systems could be explored to improve stability.
+Our spring bones are limited to 3 Degrees of Freedom (DoF).
+Specifically, the springs are translated along the x, y, and z axes in
+3D space without twisting or bending. To allow a larger DoF and
+achieve twisting motion, angular velocities can also be considered
+as in [GBFP11].
+In our RST algorithm, we directly use matrices to rotate the vec-
+tors; however, for DQS and other skinning methods, a quaternion-
+based rotation can be employed to mitigate the potential volume
+collapse of rotation matrices. Furthermore, the scope of our pro-
+posed RST algorithm can be further studied to evaluate its effec-
+tiveness.
+We also observe that longer helper bone chains are more difficult
+to control and tune for desirable secondary motion. This is also be-
+cause self-intersections can occur without collision detection. We
+leave collision detection and integrating other external forces as fu-
+ture work. Finally, we manually set up simulation parameters to
+achieve the desired secondary animation. Although the parameters
+are often shared across different examples, automating the SDS
+framework is also an open area of research.
+6. Conclusion
+Spring Decomposed Skinning proposes a simple yet effective
+framework to emulate a real-time and diverse range of secondary
+animation on existing geometric skinning pipelines. The scope of
+SDS dynamics covers a wide range, including secondary motion
+on rigid bodies, elastic bodies, soft tissues, and garment animation.
+Unlike the common FEM-based approaches, SDS does not require
+mesh tetrahedralization which significantly improves time com-
+plexity and is easy to integrate with existing animation pipelines.
+Furthermore, SDS directly simulates the bones, providing artis-
+tic control over the physical deformation. With this approach, as
+opposed to volumetric mesh simulations directly simulating mesh
+vertices, SDS aligns with the core intuition behind skinning by de-
+composing the complex surface dynamics into a linear combination
+of simple spring motions. Ultimately, SDS shows a promising di-
+rection to achieve real-time, controllable, and versatile dynamics.
+7. Acknowledgment
+We thank the anonymous reviewers for their constructive com-
+ments. We also thank Devin Horsman from Arcturus Studios
+for the initial inspiring discussions. This work was supported by
+TUBITAK under the project EEEAG-124E183.
+Appendix A: Computation of RST
+Initially, we take both rest pose bone and deformed pose bone line
+segments to their bone space where their head is at the origin. At
+the precomputation stage, for every bone i an offset matrix Bo =
+
+I
+−B0
+1i
+0
+1
+
+and its inverse B−1
+o
+=
+
+I
+B0
+1i
+0
+1
+
+is stored where I ∈
+R3×3 is the identity matrix.
+Then, both the rest pose bone i and simulated bone i is translated
+to bone space by offset Bo (step 1 in Figure 7). In the bone space,
+the amount of translation matrix T for RST matrix is saved as:
+t∗
+i = BD
+1i −B0
+1i
+(5)
+T =
+I
+t∗
+i
+0
+1
+
+(6)
+and the target bone is translated to origin such that its tail loca-
+tion is computed as BD′
+2i and in bone space, the rest bone’s tail is
+located at B0′
+2i:
+BD′
+2i = BD
+2i −B0
+1i −t∗
+i
+(7)
+B0′
+2i = B0
+2i −B0
+1i
+(8)
+At this point, our problem is to find the rotation transformation
+to align R : B0′
+2i →BD′
+2i . Let θ be the angle between two normalized
+vectors p,q ∈R3 where ∥p∥= ∥q∥= 1, then c = cosθ = p·q and
+s = sinθ = ∥p×q∥. Let the rotation be around axis r = [rx,ry,rz]
+where r = p × q/∥p×q∥and let κ = 1 −c. Rotation matrix R∗
+that aligns q to p can be computed by Rodrigues’ formula in matrix
+form:
+R∗=
+
+
+κr2x +c
+κrxry −rzs
+κrxrz +rys
+κrxry +rzs
+κr2y +c
+κryrz −rxs
+κrxrz −rys
+κryrz +rxs
+κr2z +c
+
+
+(9)
+R =
+R∗
+0
+0
+1
+
+(10)
+We also know spring simulation scales the spring bones. To
+match the scaling between rest pose bone (source) and dynami-
+cally posed bone (target), we rotate the rest bone’s tail by applying
+rotation matrix R to the rest bone tail B0′
+2i. The scaling between two
+aligned vectors is given by:
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 13 =====
+
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+13 of 14
+s =
+BD′
+2i
+
+R∗B0′
+2i
+
+(11)
+S =
+sI
+0
+0
+1
+
+(12)
+We combine these Rotate, Scale, Translate (RST) transformation
+matrices in Equations 10, 12, and 6 in
+M∗= TSR
+(13)
+Lastly, we transform the bones from bone space to world space
+back. The overall affine transformations can be chained into a sin-
+gle transformation as:
+MD
+i = B−1
+o M∗Bo
+(14)
+that is used to transform the rest pose bone to its posed space
+inside the underlying skinning method. In our experiments we use
+dynamic bone transformations MD
+i for transformation matrices Mi
+in Equation 4.
+References
+[ARF15]
+ABU RUMMAN N., FRATARCANGELI M.: Position-based skin-
+ning for soft articulated characters. In Computer Graphics Forum (2015),
+vol. 34, Wiley Online Library, pp. 240–250. 2, 3
+[AS07]
+ANGELIDIS A., SINGH K.:
+Kinodynamic skinning using
+volume-preserving deformations.
+In Proceedings of the 2007 ACM
+SIGGRAPH/Eurographics Symposium on Computer Animation (Goslar,
+DEU, 2007), SCA ’07, Eurographics Association, p. 129–140. 2
+[BL21]
+BUKENBERGER D., LENSCH H.: Be water my friend: mesh as-
+similation. The Visual Computer 37, 9 (2021), 2725–2739. 3
+[BMOT13]
+BENDER J., MÜLLER M., OTADUY M. A., TESCHNER M.:
+Position-based methods for the simulation of solid objects in computer
+graphics. In Eurographics (State of the Art Reports) (2013), pp. 1–22. 5
+[BP07]
+BARAN I., POPOVI ´C J.: Automatic rigging and animation of 3d
+characters. ACM Transactions on graphics (TOG) 26, 3 (2007), 72–es. 8
+[BRPMB17]
+BOGO F., ROMERO J., PONS-MOLL G., BLACK M. J.:
+Dynamic FAUST: Registering human bodies in motion. In IEEE Conf.
+on Computer Vision and Pattern Recognition (CVPR) (July 2017). 2, 8
+[BZC∗23]
+BENCHEKROUN O., ZHANG J. E., CHAUDHURI S., GRIN-
+SPUN E., ZHOU Y., JACOBSON A.: Fast complementary dynamics via
+skinning eigenmodes. ACM Transactions on Graphics (2023). 3, 8, 11
+[CBC∗05]
+CAPELL S., BURKHART M., CURLESS B., DUCHAMP T.,
+POPOVI ´C Z.: Physically based rigging for deformable characters. In
+Proceedings of the 2005 ACM SIGGRAPH/Eurographics symposium on
+Computer animation (2005), pp. 301–310. 3
+[CGC∗02]
+CAPELL S., GREEN S., CURLESS B., DUCHAMP T.,
+POPOVI ´C Z.: Interactive skeleton-driven dynamic deformations. ACM
+transactions on graphics (TOG) 21, 3 (2002), 586–593. 2, 3
+[CM24]
+CAO Z., MUKAI T.: Skeleton-aware skin weight transfer for
+helper joint rigs. In Eurographics (Short Papers) (2024). 3
+[CO18]
+CASAS D., OTADUY M. A.: Learning nonlinear soft-tissue dy-
+namics for interactive avatars. Proceedings of the ACM on Computer
+Graphics and Interactive Techniques 1, 1 (2018), 1–15. 2
+[DJBDT10]
+DEROUET-JOURDAN
+A.,
+BERTAILS-DESCOUBES
+F.,
+THOLLOT J.: Stable inverse dynamic curves. ACM Transactions on
+Graphics (TOG) 29, 6 (2010), 1–10. 3
+[GBFP11]
+GILLES B., BOUSQUET G., FAURE F., PAI D. K.: Frame-
+based elastic models. ACM transactions on graphics (TOG) 30, 2 (2011),
+1–12. 3, 12
+[Gol18]
+GOLEC K.: Hybrid 3D mass spring system for soft tissue simu-
+lation. PhD thesis, Université de Lyon, 2018. 3
+[HMT∗12]
+HAHN F., MARTIN S., THOMASZEWSKI B., SUMNER R.,
+COROS S., GROSS M.: Rig-space physics. ACM transactions on graph-
+ics (TOG) 31, 4 (2012), 1–8. 2, 3
+[HTC∗13]
+HAHN F., THOMASZEWSKI B., COROS S., SUMNER R. W.,
+GROSS M.: Efficient simulation of secondary motion in rig-space. In
+Proceedings of the 12th ACM SIGGRAPH/eurographics symposium on
+computer animation (2013), SCA ’13, pp. 165–171. 2, 3
+[IKNDP16]
+ICHIM A.-E., KAVAN L., NIMIER-DAVID M., PAULY M.:
+Building and animating user-specific volumetric face rigs. In Proceed-
+ings of the ACM SIGGRAPH/Eurographics Symposium on Computer
+Animation (Goslar, DEU, 2016), SCA ’16, Eurographics Association,
+p. 107–117. 2, 3
+[JHG∗22]
+JIN Y., HAN Y., GENG Z., TERAN J., FEDKIW R.: Analyt-
+ically integratable zero-restlength springs for capturing dynamic modes
+unrepresented by quasistatic neural networks. In ACM SIGGRAPH 2022
+Conference Proceedings (2022), pp. 1–9. 2, 3
+[KB18]
+KOMARITZAN M., BOTSCH M.: Projective skinning. Proceed-
+ings of the ACM on Computer Graphics and Interactive Techniques 1, 1
+(2018), 1–19. 2, 3
+[KBB∗17]
+KOZLOV Y., BRADLEY D., BÄCHER M., THOMASZEWSKI
+B., BEELER T., GROSS M.: Enriching facial blendshape rigs with phys-
+ical simulation. In Computer Graphics Forum (2017), vol. 36, Wiley
+Online Library, pp. 75–84. 2, 3
+[KHS01]
+KÄHLER K., HABER J., SEIDEL H.-P.: Geometry-based mus-
+cle modeling for facial animation. In Proceedings of Graphics Interface
+2001 (CAN, 2001), GI ’01, Canadian Information Processing Society,
+p. 37–46. 3
+[KSO10]
+KAVAN L., SLOAN P.-P., O’SULLIVAN C.: Fast and efficient
+skinning of animated meshes.
+In Computer Graphics Forum (2010),
+vol. 29, Wiley Online Library, pp. 327–336. 2
+[LBOK13]
+LIU T., BARGTEIL A. W., O’BRIEN J. F., KAVAN L.: Fast
+simulation of mass-spring systems.
+ACM Transactions on Graphics
+(TOG) 32, 6 (2013), 1–7. 3
+[LD12]
+LE B. H., DENG Z.: Smooth skinning decomposition with rigid
+bones. ACM Transactions on Graphics (TOG) 31, 6 (2012), 1–10. 2
+[LMR∗23]
+LOPER M., MAHMOOD N., ROMERO J., PONS-MOLL G.,
+BLACK M. J.: Smpl: A skinned multi-person linear model. In Seminal
+Graphics Papers: Pushing the Boundaries, Volume 2. 2023, pp. 851–866.
+2, 8
+[LST09]
+LEE S.-H., SIFAKIS E., TERZOPOULOS D.: Comprehensive
+biomechanical modeling and simulation of the upper body. ACM Trans-
+actions on Graphics (TOG) 28, 4 (2009), 1–17. 2, 3
+[LTW95]
+LEE Y., TERZOPOULOS D., WATERS K.: Realistic modeling
+for facial animation. In Proceedings of the 22nd annual conference on
+Computer graphics and interactive techniques (1995), SIGGRAPH ’95,
+pp. 55–62. 3
+[MG03]
+MOHR A., GLEICHER M.: Building efficient, accurate charac-
+ter skins from examples. ACM Transactions on Graphics (TOG) 22, 3
+(2003), 562–568. 2, 3
+[MHHR07]
+MÜLLER M., HEIDELBERGER B., HENNIX M., RATCLIFF
+J.:
+Position based dynamics.
+Journal of Visual Communication and
+Image Representation 18, 2 (2007), 109–118. 2, 4
+[MHTG05]
+MÜLLER M., HEIDELBERGER B., TESCHNER M., GROSS
+M.: Meshless deformations based on shape matching. ACM transactions
+on graphics (TOG) 24, 3 (2005), 471–478. 2, 12
+[MHYH17]
+MURAI A., HONG Q. Y., YAMANE K., HODGINS J. K.:
+Dynamic skin deformation simulation using musculoskeletal model and
+soft tissue dynamics. Computational Visual Media (2017). 3
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.
+
+
+===== PAGE 14 =====
+
+14 of 14
+B. Akyürek & Y. Sahillio˘glu / Spring Decomposed Skinning
+[MK16]
+MUKAI T., KURIYAMA S.:
+Efficient dynamic skinning with
+low-rank helper bone controllers. ACM Transactions on Graphics (TOG)
+35, 4 (2016), 1–11. 3, 7
+[MMRH22]
+MOSELLA-MONTORO A., RUIZ-HIDALGO J.:
+Skin-
+ningnet: Two-stream graph convolutional neural network for skinning
+prediction of synthetic characters. In Proceedings of the IEEE/CVF con-
+ference on computer vision and pattern recognition (2022), pp. 18593–
+18602. 2
+[Muk15]
+MUKAI T.: Building helper bone rigs from examples. In Pro-
+ceedings of the 19th Symposium on Interactive 3D Graphics and Games
+(2015), pp. 77–84. 2, 3
+[Muk18]
+MUKAI T.: Sampling-based rig conversion into non-rigid helper
+bones. Proceedings of the ACM on Computer Graphics and Interactive
+Techniques 1, 1 (2018), 1–17. 3
+[MWF∗12]
+MA W.-C., WANG Y.-H., FYFFE G., CHEN B.-Y., DE-
+BEVEC P.: A blendshape model that incorporates physical interaction.
+Computer Animation and Virtual Worlds 23, 3-4 (2012), 235–243. 2
+[MZS∗11]
+MCADAMS A., ZHU Y., SELLE A., EMPEY M., TAMSTORF
+R., TERAN J., SIFAKIS E.: Efficient elasticity for character skinning
+with contact and collisions. In ACM SIGGRAPH 2011 papers. 2011,
+pp. 1–12. 2, 3
+[NT98]
+NEDEL L. P., THALMANN D.: Real time muscle deformations
+using mass-spring systems. In Proceedings. computer graphics interna-
+tional (cat. no. 98ex149) (1998), IEEE, pp. 156–165. 3
+[PMRMB15]
+PONS-MOLL G., ROMERO J., MAHMOOD N., BLACK
+M. J.: Dyna: A model of dynamic human shape in motion. ACM Trans-
+actions on Graphics (TOG) 34, 4 (2015), 1–14. 2
+[RF14]
+RUMMAN N. A., FRATARCANGELI M.: Position based skinning
+of skeleton-driven deformable characters. In Proceedings of the 30th
+Spring Conference on Computer Graphics (2014), SCCG ’14, pp. 83–
+90. 2, 3
+[RF16]
+RUMMAN N. A., FRATARCANGELI M.: State of the art in skin-
+ning techniques for articulated deformable characters. In International
+Conference on Computer Graphics Theory and Applications (2016),
+vol. 2, SciTePress, pp. 200–212. 2
+[RRC∗18]
+ROUSSELLET V., RUMMAN N. A., CANEZIN F., MELLADO
+N., KAVAN L., BARTHE L.: Dynamic implicit muscles for character
+skinning. Computers & Graphics 77 (2018), 227–239. 2
+[RTK∗21]
+ROHMER D., TARINI M., KALYANASUNDARAM N., MOSH-
+FEGHIFAR F., CANI M.-P., ZORDAN V.: Velocity skinning for real-
+time stylized skeletal animation. In Computer Graphics Forum (2021),
+vol. 40, Wiley Online Library, pp. 549–561. 3
+[SGOC20]
+SANTESTEBAN I., GARCES E., OTADUY M. A., CASAS D.:
+Softsmpl: Data-driven modeling of nonlinear soft-tissue dynamics for
+parametric humans. In Computer Graphics Forum (2020), vol. 39, Wiley
+Online Library, pp. 65–75. 2
+[SGX∗21]
+SHIMADA S., GOLYANIK V., XU W., PÉREZ P., THEOBALT
+C.: Neural monocular 3d human motion capture with physical aware-
+ness. ACM Transactions on Graphics (ToG) 40, 4 (2021), 1–15. 2
+[SGXT20]
+SHIMADA S., GOLYANIK V., XU W., THEOBALT C.:
+Physcap: Physically plausible monocular 3d motion capture in real time.
+ACM Transactions on Graphics (ToG) 39, 6 (2020), 1–16. 2
+[SHR17]
+SORKINE-HORNUNG O., RABINOVICH M.:
+Least-squares
+rigid motion using svd, 2017. 7
+[SK16]
+SAHILLIO ˘GLU Y., KAVAN L.: Detail-preserving mesh unfolding
+for nonrigid shape retrieval. ACM Transactions on Graphics (TOG) 35,
+3 (2016), 1–11. 3
+[SLF08]
+SELLE A., LENTINE M., FEDKIW R.: A mass spring model for
+hair simulation. In ACM SIGGRAPH 2008 papers. 2008, pp. 1–11. 3
+[SRKZ24]
+SALEM K., ROHMER D., KALYANASUNDARAM N., ZOR-
+DAN V.:
+Art-directable Expressive Oscillation Behavior for Rigged
+Characters. In Eurographics/ ACM SIGGRAPH Symposium on Com-
+puter Animation - Posters (2024), Zordan V., (Ed.), The Eurographics
+Association. 3
+[SY10]
+SAHILLIO ˘GLU Y., YEMEZ Y.: Coarse-to-fine surface reconstruc-
+tion from silhouettes and range data using mesh deformation. Computer
+Vision and Image Understanding 114, 3 (2010), 334–348. 3
+[SZT∗08]
+SHI X., ZHOU K., TONG Y., DESBRUN M., BAO H., GUO
+B.: Example-based dynamic skinning in real time. ACM Transactions
+on Graphics (TOG) 27, 3 (2008), 1–8. 2
+[TN19]
+TOOTHMAN N., NEFF M.: Spring rigs for skinning. In Proceed-
+ings of the 12th ACM SIGGRAPH Conference on Motion, Interaction
+and Games (2019), pp. 1–10. 3
+[TRPO21]
+TAPIA J., ROMERO C., PÉREZ J., OTADUY M. A.: Para-
+metric skeletons with reduced soft-tissue deformations.
+In Computer
+Graphics Forum (2021), vol. 40, Wiley Online Library, pp. 34–46. 3
+[TT93]
+TURNER R., THALMANN D.: The elastic surface layer model for
+animated character construction. In Communicating with virtual worlds
+(1993), Springer, pp. 399–412. 3
+[vFTS07]
+VON FUNCK W., THEISEL H., SEIDEL H.-P.:
+Elastic sec-
+ondary deformations by vector field integration. In ACM International
+Conference Proceeding Series (2007), vol. 257 of SGP ’07, pp. 99–108.
+3
+[Wan23]
+WANG T.: Joint-based skin deformation in god of war ragnarök,
+2023. Game Developers Conference. 3, 10
+[WB01]
+WITKIN A., BARAFF D.: Physically based modeling. In ACM
+SIGGRAPH 2001 Courses (2001). 2
+[WLP∗17]
+WILLETT N. S., LI W., POPOVI ´C J., BERTHOUZOZ F.,
+FINKELSTEIN A.: Secondary motion for performed 2D animation. Pro-
+ceedings of the ACM Symposium on User Interface Software and Tech-
+nology (UIST) (Oct. 2017). 2, 3
+[WU23]
+WU Y., UMETANI N.:
+Two-way coupling of skinning trans-
+formations and position based dynamics. Proceedings of the ACM on
+Computer Graphics and Interactive Techniques 6, 3 (2023), 1–18. 3, 8,
+10, 11
+[YS09]
+YEMEZ Y., SAHILLIO ˘GLU Y.:
+Shape from silhouette using
+topology-adaptive mesh deformation. Pattern Recognition Letters 30,
+13 (2009), 1198–1207. 3
+[YWM∗21]
+YANG Z., WANG S., MANIVASAGAM S., HUANG Z., MA
+W.-C., YAN X., YUMER E., URTASUN R.: S3: Neural shape, skele-
+ton, and skinning fields for 3d human modeling.
+In Proceedings of
+the IEEE/CVF conference on computer vision and pattern recognition
+(2021), pp. 13284–13293. 2
+[ZBLJ20]
+ZHANG J. E., BANG S., LEVIN D. I., JACOBSON A.: Com-
+plementary dynamics. ACM Transactions on Graphics (2020). 3, 7, 8,
+9
+[ZZCB21]
+ZHENG M., ZHOU Y., CEYLAN D., BARBIC J.:
+A deep
+emulator for secondary motion of 3d characters.
+In Proceedings of
+the IEEE/CVF conference on computer vision and pattern recognition
+(2021), pp. 5932–5940. 2, 3
+© 2025 Eurographics - The European Association
+for Computer Graphics and John Wiley & Sons Ltd.

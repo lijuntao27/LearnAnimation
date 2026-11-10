@@ -43,24 +43,13 @@ updated: 2026-09-02
 - 每个 entity 页面应包含：用途、关键接口、使用示例、注意事项
 - 每个 concept 页面应包含：定义、适用场景、优缺点、在本项目中的体现
 
-## 数学公式 Markdown 格式（必守）
+## 数学公式与符号约定（必守）
 
-数学公式一律使用 Obsidian 原生 LaTeX 标记（MathJax 渲染）：
+数学公式渲染格式、公式与「结构示意图」的边界、以及全书统一符号约定，**一律以 [[TheSchema/math-notation]] 为准**（2026-09-07 自本文件抽出独立成篇）。速记：
 
-- **行内公式**用 `$...$`：如 $h_t = f(h_{t-1}, x_t)$
-- **块级公式**用 `$$...$$`（单独成行、公式独占段落）：如递推式、损失函数、核心定义
+- 行内公式 `$...$`、块级公式 `$$...$$`（MathJax / Obsidian 原生 LaTeX）
+- 禁：公式进代码块/反引号、ASCII/Unicode 手拼公式、下标上标手写体
+- 代码块仍可用于**结构示意图/数据流图**（与公式的边界判定见 math-notation §2）
+- 向量、矩阵、梯度、代价、更新式等符号按 math-notation §3 统一
 
-**禁止**：
-
-- 把公式写进代码块（```` ``` ````）或反引号里
-- 用纯文本 / ASCII / Unicode 字符手拼公式（如 `` `h_t = φ(W_hh·h_{t-1}+...)` ``）
-- 下标/上标/希腊字母用手写体（如 `h_t`、`W_hh`、`φ`），一律用 LaTeX（`h_{t}`、`W_{hh}`、`\phi`）
-
-何时用块级：需要单独成行阅读的公式（更新式、损失、定义）。正文里提到的单个符号或简短关系用行内（如 $h_t$、$d_{in}$ 维）。
-
-反例 vs 正例：
-
-- ❌ `` `h_t = φ(W_hh · h_{t-1} + W_xh · x_t + b)` ``（反引号包整条公式）
-- ✅ 块级 `$$h_t = \phi(W_{hh}\, h_{t-1} + W_{xh}\, x_t + b)$$`
-
-参考：`TheWiki/deep-learning/RecurrentNetworks.md` 是按此规范修正的示例页。
+参考：`TheWiki/deep-learning/RecurrentNetworks.md`、`TheWiki/deep-learning/NeuralNetworkBasics.md` 是按此规范修正的示例页。
